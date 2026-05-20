@@ -1,5 +1,5 @@
 from tools.rag.models import Chunk, Document, FileMention, FileStatus, IngestResult, RagConfig, RetrievedChunk
-
+from tools.rag.session import RagSession
 __all__ = [
     "Chunk",
     "Document",
@@ -7,5 +7,6 @@ __all__ = [
     "FileStatus",
     "IngestResult",
     "RagConfig",
+    "RagSession",
     "RetrievedChunk",
 ]

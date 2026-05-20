@@ -1,37 +1,51 @@
+import tempfile
+from pathlib import Path
+
 import unittest
-
+from tools.rag.session import RagSession
+from tools.rag.models import RagConfig
 from config.settings import RAG_SETTINGS
-from tools.rag.models import Chunk, Document, RagConfig
 
+class RagSessionFacadeTests(unittest.TestCase):
+    def test_ingest_files_indexes_chunks_and_reports_status(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            file_path = root / "notes.md"
+            file_path.write_text("deploy risk is high", encoding="utf-8")
+            config = RagConfig.from_settings(
+                {
+                    **RAG_SETTINGS,
+                    "safe_roots": [str(root)],
+                    "supported_extensions": [".md"],
+                    "chunk_target_chars": 800,
+                    "chunk_overlap_chars": 100,
+                }
+            )
+            session = RagSession(config=config, project_root=root)
 
-class RagSessionTests(unittest.TestCase):
-    def test_default_rag_settings_are_available(self):
-        self.assertTrue(RAG_SETTINGS["enabled"])
-        self.assertEqual(RAG_SETTINGS["max_files_per_request"], 5)
-        self.assertEqual(RAG_SETTINGS["max_retrieved_chunks"], 6)
+            result = session.ingest_paths([file_path])
 
-    def test_rag_config_from_settings(self):
-        config = RagConfig.from_settings(RAG_SETTINGS)
+            self.assertEqual(result.statuses[0].status, "indexed")
+            self.assertEqual(len(session.chunks), 1)
 
-        self.assertEqual(config.max_files_per_request, 5)
-        self.assertIn(".md", config.supported_extensions)
+    def test_build_prompt_adds_retrieved_context(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            file_path = root / "notes.md"
+            file_path.write_text("deploy risk is high", encoding="utf-8")
+            config = RagConfig.from_settings({**RAG_SETTINGS, "safe_roots": [str(root)], "supported_extensions": [".md"]})
+            session = RagSession(config=config, project_root=root)
+            session.ingest_paths([file_path])
 
-    def test_document_and_chunk_models_hold_metadata(self):
-        document = Document(
-            id="doc-1",
-            name="README.md",
-            path="/repo/README.md",
-            content_hash="abc",
-            byte_size=10,
-            text_length=20,
-        )
-        chunk = Chunk(
-            id="doc-1:0",
-            document_id=document.id,
-            document_name=document.name,
-            index=0,
-            text="hello world",
-        )
+            prompt = session.build_prompt("what is deploy risk?")
 
-        self.assertEqual(chunk.citation, "[file:README.md#chunk-0]")
-        self.assertEqual(chunk.document_id, "doc-1")
+            self.assertIn("Attached file context:", prompt)
+            self.assertIn("[file:notes.md#chunk-0]", prompt)
+
+    def test_build_prompt_without_matches_returns_original_question(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = RagConfig.from_settings({**RAG_SETTINGS, "safe_roots": [str(root)]})
+            session = RagSession(config=config, project_root=root)
+
+            self.assertEqual(session.build_prompt("hello"), "hello")
