@@ -4,6 +4,8 @@ from pathlib import Path
 
 from tools.rag.models import RagConfig
 from tools.rag.terminal import extract_file_mentions, resolve_mentions
+from tools.rag.session import RagSession
+from main import prepare_text_prompt_with_rag
 
 
 def config_for(root: Path) -> RagConfig:
@@ -66,3 +68,27 @@ class RagTerminalTests(unittest.TestCase):
             self.assertEqual(resolved, [])
             self.assertEqual(statuses[0].status, "rejected")
             self.assertIn("outside allowed roots", statuses[0].reason)
+
+class RagTerminalIntegrationTests(unittest.TestCase):
+    def test_prepare_text_prompt_indexes_mentions_and_returns_augmented_prompt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            file_path = root / "notes.md"
+            file_path.write_text("deploy risk is high", encoding="utf-8")
+            rag = RagSession(config_for(root), project_root=root)
+
+            prompt, statuses = prepare_text_prompt_with_rag("what risk in @notes.md?", rag, root)
+
+            self.assertIn("Attached file context:", prompt)
+            self.assertIn("[file:notes.md#chunk-0]", prompt)
+            self.assertEqual(statuses[-1].status, "indexed")
+
+    def test_prepare_text_prompt_without_mentions_leaves_prompt_unchanged(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rag = RagSession(config_for(root), project_root=root)
+
+            prompt, statuses = prepare_text_prompt_with_rag("hello there", rag, root)
+
+            self.assertEqual(prompt, "hello there")
+            self.assertEqual(statuses, [])
