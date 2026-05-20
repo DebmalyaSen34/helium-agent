@@ -11,7 +11,7 @@ Helium is a local-first AI assistant with a voice pipeline, tool-calling agent l
 - **Local speech-to-text:** Transcribes microphone input with `mlx-whisper`, including retry and audio-capture diagnostics.
 - **LLM orchestration:** Maintains conversation history and runs a tool-feedback loop around local model responses.
 - **Text-to-speech:** Speaks responses through Kokoro voice synthesis.
-- **Tool calling:** Searches the web, creates files, stores memories, opens apps, and reports the current time.
+- **Tool calling:** Searches the web, researches topics, creates files, stores memories, opens apps, and reports the current time.
 - **Tool permissions:** Risky actions, such as file creation and app opening, can require confirmation.
 - **Follow-up mode:** Keeps listening briefly after a reply so you can continue without repeating the wake word.
 - **Web UI:** Includes a FastAPI WebSocket backend and a React/Vite frontend for browser-based chat.
@@ -51,7 +51,8 @@ Helium/
 │   ├── memory_ops.py       # Memory tools
 │   ├── system_ops.py       # System tools
 │   ├── web_search.py       # Web-search tool entry point
-│   └── search/             # Search providers, planning, ranking, fetching, extraction
+│   ├── search/             # Search providers, planning, ranking, fetching, extraction
+│   └── research/           # Research planner, models, pipeline, execution
 ├── utils/
 │   ├── audio.py            # macOS sound cues
 │   ├── health.py           # Service health checks
@@ -158,6 +159,9 @@ What is the latest news on AI?
 Remember that I prefer concise responses.
 Create a file named hello.txt that says hi.
 Open Safari.
+Compare India and China GDP in 2025.
+Why is the Indian Rupee falling recently?
+Give me a report on the latest AI regulation changes in the EU.
 ```
 
 ## Run The Web UI
