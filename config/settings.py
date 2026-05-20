@@ -48,6 +48,33 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "dynamic_energy_threshold": True,
         "pause_threshold": 0.75,
     },
+    "rag": {
+        "enabled": True,
+        "max_files_per_request": 5,
+        "max_bytes_per_file": 1_000_000,
+        "max_total_attachment_bytes": 3_000_000,
+        "max_indexed_chunks": 400,
+        "max_retrieved_chunks": 6,
+        "max_context_chars": 6_000,
+        "chunk_target_chars": 800,
+        "chunk_overlap_chars": 100,
+        "safe_roots": ["."],
+        "supported_extensions": [
+            ".txt",
+            ".md",
+            ".py",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".csv",
+            ".log",
+        ]
+    },
     "assistant": {
         "tts_voice": "af_heart",
         "follow_up_mode": True,
@@ -107,6 +134,8 @@ OLLAMA_MODEL = SETTINGS["services"]["ollama_model"]
 
 SEARXNG_URL = SETTINGS["services"]["searxng_url"]
 PROMPT_TEMPLATE = "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+
+RAG_SETTINGS = SETTINGS["rag"]
 
 WAKE_WORD_SETTINGS = SETTINGS["wake_word"]
 SPEECH_SETTINGS = SETTINGS["speech"]

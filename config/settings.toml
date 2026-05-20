@@ -30,6 +30,19 @@ energy_threshold = 300
 dynamic_energy_threshold = true
 pause_threshold = 0.75
 
+[rag]
+enabled = true
+max_files_per_request = 5
+max_bytes_per_file = 1000000
+max_total_attachment_bytes = 3000000
+max_indexed_chunks = 400
+max_retrieved_chunks = 6
+max_context_chars = 6000
+chunk_target_chars = 800
+chunk_overlap_chars = 100
+safe_roots = ["."]
+supported_extensions = [".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml", ".toml", ".csv", ".log"]
+
 [assistant]
 tts_voice = "af_heart"
 follow_up_mode = true
