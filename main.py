@@ -4,7 +4,6 @@ import select
 import sys
 import argparse
 from typing import Any
-from pathlib import Path
 
 import openwakeword
 import speech_recognition as sr
@@ -20,10 +19,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS, RAG_SETTINGS, BASE_DIR
-from tools.rag.models import FileStatus, RagConfig
-from tools.rag.session import RagSession
-from tools.rag.terminal import extract_file_mentions, resolve_mentions
+from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS
 from core.llm import generate_response
 from engine.stt import build_speech_config, speech_to_text
 from engine.tts import text_to_speech
@@ -155,41 +151,6 @@ def print_sources(sources: list[dict[str, str]]) -> None:
         console.print(line)
 
 
-def print_attachment_status(statuses: list[FileStatus]) -> None:
-    if not statuses:
-        return
-
-    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
-    table.add_column("File")
-    table.add_column("Status")
-    table.add_column("Detail", style="dim")
-    for status in statuses:
-        detail = status.reason
-        if status.chunks:
-            detail = f"{status.chunks} chunks"
-        style = "green" if status.status == "indexed" else "yellow"
-        table.add_row(status.name, f"[{style}]{status.status}[/{style}]", detail)
-    console.print(app_panel(table, title="Attachments", border_style="cyan"))
-
-
-def prepare_text_prompt_with_rag(
-    user_text: str,
-    rag_session: RagSession,
-    project_root: Path = BASE_DIR,
-) -> tuple[str, list[FileStatus]]:
-    cleaned_text, mentions = extract_file_mentions(user_text)
-    if not mentions:
-        return user_text, []
-
-    resolved_paths, statuses = resolve_mentions(mentions, project_root, rag_session.config)
-    if resolved_paths:
-        ingest_result = rag_session.ingest_paths(resolved_paths)
-        statuses.extend(ingest_result.statuses)
-
-    question = cleaned_text or user_text
-    preferred_document_names = {path.name for path in resolved_paths}
-    return rag_session.build_prompt(question, preferred_document_names=preferred_document_names), statuses
-
 def stream_reply(reply_generator) -> str:
     full_reply = ""
     for chunk in reply_generator:
@@ -294,11 +255,6 @@ def main(mode: str = "voice"):
         print_header("text")
         console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
         
-        rag_session = RagSession(
-            config=RagConfig.from_settings(RAG_SETTINGS),
-            project_root=BASE_DIR,
-        )
-
         while True:
             try:
                 user_text = Prompt.ask("\n[bold green]You[/bold green]").strip()
@@ -310,8 +266,6 @@ def main(mode: str = "voice"):
 
                 reset_state()
                 record_command(user_text)
-                prompt_text, attachment_statuses = prepare_text_prompt_with_rag(user_text, rag_session, BASE_DIR)
-                print_attachment_status(attachment_statuses)
                 metrics: dict[str, Any] = {}
                 sources: list[dict[str, str]] = []
 
@@ -320,7 +274,7 @@ def main(mode: str = "voice"):
                         sources.extend(extract_web_sources(tool_result))
 
                 reply_generator = generate_response(
-                    prompt_text,
+                    user_text,
                     confirm_tool=confirm_tool,
                     on_state=set_state,
                     on_metrics=metrics.update,
