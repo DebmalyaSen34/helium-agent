@@ -150,16 +150,57 @@ def print_sources(sources: list[dict[str, str]]) -> None:
         line.append(source["url"], style="cyan")
         console.print(line)
 
+def smart_join(current: str, chunk: str) -> str:
+    if not current:
+        return chunk
+
+    if not chunk:
+        return current
+
+    # punctuation attaches directly
+    if chunk[0] in ".,!?;:%)]}":
+        return current + chunk
+
+    # apostrophe contractions
+    if chunk.startswith("'"):
+        return current + chunk
+
+    # preserve existing whitespace
+    if current[-1].isspace():
+        return current + chunk
+
+    if chunk[0].isspace():
+        return current + chunk
+
+    # hyphenated continuation
+    if current.endswith("-"):
+        return current + chunk
+
+    # em dash continuation
+    if current.endswith("—"):
+        return current + chunk
+
+    # default word spacing
+    return current + " " + chunk
+
 
 def stream_reply(reply_generator) -> str:
     full_reply = ""
+
     for chunk in reply_generator:
-        chunk = chunk.strip()
         if not chunk:
             continue
-        full_reply = f"{full_reply} {chunk}".strip()
+
+        full_reply = smart_join(full_reply, chunk)
+
     if full_reply:
-        print_chat_message("Helium", full_reply, style="cyan", markdown=True)
+        print_chat_message(
+            "Helium",
+            full_reply.strip(),
+            style="cyan",
+            markdown=True
+        )
+
     return full_reply
 
 
