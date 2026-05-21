@@ -187,7 +187,8 @@ def prepare_text_prompt_with_rag(
         statuses.extend(ingest_result.statuses)
 
     question = cleaned_text or user_text
-    return rag_session.build_prompt(question), statuses
+    preferred_document_names = {path.name for path in resolved_paths}
+    return rag_session.build_prompt(question, preferred_document_names=preferred_document_names), statuses
 
 def stream_reply(reply_generator) -> str:
     full_reply = ""

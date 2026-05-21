@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tools.rag.chunking import chunk_document
 from tools.rag.extractors import read_text_file
-from tools.rag.models import Document, FileStatus, IngestResult, RagConfig
+from tools.rag.models import Chunk, Document, FileStatus, IngestResult, RagConfig, RetrievedChunk
 from tools.rag.prompt import build_rag_prompt
 from tools.rag.retrieval import LexicalRetriever
 from tools.rag.validation import validate_files
@@ -16,7 +16,7 @@ class RagSession:
         self.config = config
         self.project_root = project_root.resolve()
         self.documents: list[Document] = []
-        self.chunks = []
+        self.chunks: list[Chunk] = []
         self._hashes: set[str] = set()
 
     def ingest_paths(self, paths: list[Path]) -> IngestResult:
@@ -61,8 +61,22 @@ class RagSession:
 
         return result
 
-    def build_prompt(self, user_question: str) -> str:
+    def build_prompt(self, user_question: str, preferred_document_names: set[str] | None = None) -> str:
         if not self.chunks:
             return user_question
-        retrieved = LexicalRetriever(self.chunks).search(user_question, self.config.max_retrieved_chunks)
+        searchable_chunks = self.chunks
+        if preferred_document_names:
+            searchable_chunks = [
+                chunk for chunk in self.chunks
+                if chunk.document_name in preferred_document_names
+            ]
+            if not searchable_chunks:
+                return user_question
+
+        retrieved = LexicalRetriever(searchable_chunks).search(user_question, self.config.max_retrieved_chunks)
+        if not retrieved and preferred_document_names:
+            retrieved = [
+                RetrievedChunk(chunk=chunk, score=0.0)
+                for chunk in searchable_chunks[: self.config.max_retrieved_chunks]
+            ]
         return build_rag_prompt(user_question, retrieved, self.config.max_context_chars)

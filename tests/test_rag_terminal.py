@@ -83,6 +83,20 @@ class RagTerminalIntegrationTests(unittest.TestCase):
             self.assertIn("[file:notes.md#chunk-0]", prompt)
             self.assertEqual(statuses[-1].status, "indexed")
 
+    def test_prepare_text_prompt_uses_mentioned_file_for_generic_summary_query(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            file_path = root / "notes.md"
+            file_path.write_text("alpha beta gamma", encoding="utf-8")
+            rag = RagSession(config_for(root), project_root=root)
+
+            prompt, statuses = prepare_text_prompt_with_rag("summarize @notes.md in three bullets", rag, root)
+
+            self.assertIn("Attached file context:", prompt)
+            self.assertIn("[file:notes.md#chunk-0]", prompt)
+            self.assertIn("alpha beta gamma", prompt)
+            self.assertEqual(statuses[-1].status, "indexed")
+
     def test_prepare_text_prompt_without_mentions_leaves_prompt_unchanged(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

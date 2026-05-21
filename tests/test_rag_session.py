@@ -49,3 +49,18 @@ class RagSessionFacadeTests(unittest.TestCase):
             session = RagSession(config=config, project_root=root)
 
             self.assertEqual(session.build_prompt("hello"), "hello")
+
+    def test_build_prompt_uses_mentioned_document_when_query_is_generic(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            file_path = root / "notes.md"
+            file_path.write_text("alpha beta gamma", encoding="utf-8")
+            config = RagConfig.from_settings({**RAG_SETTINGS, "safe_roots": [str(root)], "supported_extensions": [".md"]})
+            session = RagSession(config=config, project_root=root)
+            session.ingest_paths([file_path])
+
+            prompt = session.build_prompt("summarize in three bullets", preferred_document_names={"notes.md"})
+
+            self.assertIn("Attached file context:", prompt)
+            self.assertIn("[file:notes.md#chunk-0]", prompt)
+            self.assertIn("alpha beta gamma", prompt)
