@@ -1,4 +1,3 @@
-import requests
 import logging
 import time
 import json
@@ -136,6 +135,7 @@ def generate_response(
     think_end = None
     token_count = 0
     tools_used = []
+    tool_execution_time=0.0
 
     if on_state:
         on_state("Thinking")
@@ -216,10 +216,12 @@ def generate_response(
             except json.JSONDecodeError:
                 pass
 
+            tool_start_time = time.time()
             tool_result = execute_tool(
                 reply,
                 confirm_tool=confirm_tool,
             )
+            tool_execution_time = time.time() - tool_start_time
 
             if tool_result:
 
@@ -313,13 +315,15 @@ def generate_response(
             else 0
         )
 
-        gen_time = (
-            (end_time - start_time) - think_time
-            if think_time
-            else 1
-        )
+        # gen_time = (
+        #    (end_time - start_time) - think_time
+        #    if think_time
+        #    else 1
+        # )
 
         total_time = end_time - start_time
+
+        gen_time = total_time - think_time - tool_execution_time
 
         tps = (
             token_count / gen_time

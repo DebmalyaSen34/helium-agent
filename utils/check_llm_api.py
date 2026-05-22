@@ -13,8 +13,15 @@ def hit_api(payload: dict, is_stream: bool = True):
             },
             json=payload,
             stream=is_stream,
+            timeout=(10, 30) if is_stream else None, # 10s read timeout and 30s connect timeout
         )
         return response
+    except requests.ConnectTimeout:
+        print("Connection timed out while trying to connect to the API.")
+        return None
+    except requests.ReadTimeout:
+        print("Read timed out while waiting for a response from the API.")
+        return None
     except Exception as e:
         print(f"Error hitting API: {e}")
         return None
