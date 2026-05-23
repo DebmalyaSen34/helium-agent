@@ -96,3 +96,9 @@ Tool discipline:
 - If a tool is needed, follow the tool JSON format exactly.
 - If no tool is needed, respond naturally as Jarvis.
 """
+
+[browser]
+use_playwright = true
+fallback_only = true
+timeout_seconds = 8.0
+headless = true

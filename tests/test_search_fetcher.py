@@ -53,7 +53,8 @@ class ContentFetcherTests(unittest.TestCase):
                 raise RuntimeError("network down")
             return ok_response
 
-        with patch("tools.search.fetcher.requests.get", side_effect=fake_get):
+        with patch("tools.search.fetcher.requests.get", side_effect=fake_get), \
+             patch("tools.search.fetcher.BROWSER_SETTINGS", {"use_playwright": False, "fallback_only": True}):
             pages = ContentFetcher(timeout=1.0).fetch([first, duplicate, failing])
 
         self.assertEqual(len(pages), 2)

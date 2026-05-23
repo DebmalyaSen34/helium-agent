@@ -10,6 +10,7 @@ from tools.system_ops import open_app, get_time
 from tools.file_ops import create_file
 from tools.search.hybrid_fetch import fetch_url_content_mvp
 from tools.search.searxng import search_searxng
+from tools.search.browse_url import browse_url
 from tools.web_search import search_web
 from tools.research.pipeline import research_query
 from utils.parser import extract_json
@@ -30,6 +31,7 @@ AVAILABLE_TOOLS = {
     "retrieve_facts": ToolDefinition(retrieve_facts, "Retrieves saved facts and preferences.", "safe"),
     "open_app": ToolDefinition(open_app, "Opens a macOS application.", "risky"),
     "get_time": ToolDefinition(get_time, "Returns the current system time.", "safe"),
+    "browse_url": ToolDefinition(browse_url, "Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text.", "safe"),
 }
 
 TOOL_PROMPT = """
@@ -51,6 +53,7 @@ You have access to the following tools:
 5. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts and preferences. Permission: safe.
 6. open_app(app_name: str) - Opens a macOS application (e.g., 'Safari', 'Calculator'). Permission: risky, user confirmation required.
 7. get_time() - Returns the current system time. Permission: safe.
+8. browse_url(url: str) - Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text. Use this when the user points you to a specific web link. Permission: safe.
 
 If you need to use a tool, you MUST respond in the exact JSON format. You MUST think about your plan first.
 
@@ -93,6 +96,10 @@ def execute_react_tool(action_dict: dict) -> str:
     if "fetch_url" in action_dict:
         url = action_dict["fetch_url"].get("url", "")
         return fetch_url_content_mvp(url)
+
+    if "browse_url" in action_dict:
+        url = action_dict["browse_url"].get("url", "")
+        return browse_url(url)
 
     if "finish" in action_dict:
         return action_dict["finish"].get("answer", "")

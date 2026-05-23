@@ -22,7 +22,7 @@ class SearchPipeline:
         self.today = today or dt.date.today()
         self.planner = SearchPlanner(today=self.today)
         self.provider_runner = provider_runner or ProviderRunner(
-            [SearxngProvider(SEARXNG_URL), DdgsProvider()],
+            [DdgsProvider(), SearxngProvider(SEARXNG_URL)],
             min_results=2,
         )
         self.fetcher = fetcher or ContentFetcher()

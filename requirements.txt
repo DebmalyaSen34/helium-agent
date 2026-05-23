@@ -11,3 +11,4 @@ ddgs
 beautifulsoup4
 fastapi
 uvicorn[standard]
+playwright

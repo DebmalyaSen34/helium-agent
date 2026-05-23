@@ -23,6 +23,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "health_timeout_seconds": 1.5,
         "local": True,
     },
+    "browser": {
+        "use_playwright": True,
+        "fallback_only": True,
+        "timeout_seconds": 8.0,
+        "headless": True,
+    },
     "wake_word": {
         "models": ["jarvis"],
         "threshold": 0.35,
@@ -190,3 +196,5 @@ ASSISTANT_SETTINGS = SETTINGS["assistant"]
 ASSISTANT_PERSONA = str(ASSISTANT_SETTINGS.get("persona", DEFAULT_SETTINGS["assistant"]["persona"])).strip()
 MEMORY_FILE = BASE_DIR / "memory.json"
 COMMAND_HISTORY_FILE = BASE_DIR / "command_history.json"
+BROWSER_SETTINGS = SETTINGS.get("browser", DEFAULT_SETTINGS["browser"])
+

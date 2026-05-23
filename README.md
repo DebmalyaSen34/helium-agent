@@ -114,6 +114,8 @@ If audio dependencies fail to build, install PortAudio first, then rerun the Pyt
 
 ## Local Services
 
+> Note: You can either use llama.cpp or any LLM provider API.
+
 ### Start llama.cpp
 
 Run a compatible instruction-tuned GGUF model on port `3000`:
@@ -127,6 +129,19 @@ Helium expects the default completion endpoint at:
 ```text
 http://127.0.0.1:3000/completion
 ```
+
+### Use LLM API
+
+If you have an API to any LLM provider then you can use them directly by adding the `API Key` to a `.env` file in the directory.
+
+```text
+OPENROUTER_API_KEY=your-llm-url-llm-api-key
+OPENTOUER_URL=your-llm-url
+```
+```
+```
+
+Look at `.env.example` for more detail.
 
 ### Start SearxNG
 
@@ -146,23 +161,46 @@ docker run -d -p 8080:8080 \
 
 If SearxNG is unavailable, Helium falls back to DDGS.
 
+### Start Playwright
+
+Helium comes with playwright compatibility. So, if you want to get more in-depth results from web you can turn on this feature by updating `use_playwright=true` in `config/settings.toml`
+
+Then install playwright and chromium.
+
+```bash
+pip install playwright
+playright install chromium
+```
+
+> These are not added in `requirements.txt` because Helium aims to be lightweight. But you can do whatever you want!
+
+> Note: Playwright is heavy as it downloads chromium so it can take some of your memory. Use with caution.
+
+### Start RAG pipeline
+
+Helium comes with its own RAG pipeline. This allows you to add files with `@` prefix to the file path to your file. Then you can ask anything about that file.
+
+Currently it is good enough to answer what is inside it, summarize it, and other basic questions. Later I intend to deepen the understanding of the file using local embeddings.
+
+This is an **optional** feature. Look into `rag_service` directory for more detail.
+
 ## Run The Assistant
 
+> Note: Only TEXT mode is ready for use.
+
 1. Confirm the LLM service is running.
-2. Confirm your microphone is connected and authorized.
+2. Confirm your web services are running if you want better results.
 3. Start Helium:
 
    ```bash
-   python main.py
+   python main.py --mode text
    ```
 
 4. Wait for:
 
-   ```text
-   Pipeline Ready. Say 'Helium' to wake me.
-   ```
+Animation to load and welcome message to be shown.
 
-5. Say **"Helium"** or press **Enter**, then speak your request.
+5. Type your query and enjoy Helium.
 
 Example requests:
 
