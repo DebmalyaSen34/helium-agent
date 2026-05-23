@@ -1,0 +1,6 @@
+faiss-cpu
+FlagEmbedding
+sentence-transformers
+pypdf
+python-docx
+openpyxl

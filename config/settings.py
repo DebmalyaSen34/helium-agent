@@ -77,6 +77,48 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             ".log",
         ]
     },
+    "rag_service": {
+        "enabled": True,
+        "service_url": "http://127.0.0.1:8765",
+        "host": "127.0.0.1",
+        "port": 8765,
+        "auto_start": False,
+        "fail_closed": True,
+        "safe_roots": ["."],
+        "cache_dir": ".cache/rag_service",
+        "max_bytes_per_file": 25_000_000,
+        "evidence_budget_chars": 16_000,
+        "full_text_budget_chars": 12_000,
+        "max_chunks": 600,
+        "max_candidates": 24,
+        "max_evidence_chunks": 8,
+        "embedding_model": "BAAI/bge-m3",
+        "fallback_embedding_model": "BAAI/bge-base-en-v1.5",
+        "reranker_model": "BAAI/bge-reranker-base",
+        "device": "auto",
+        "batch_size": 8,
+        "timeout_seconds": 120,
+        "rag_debug": False,
+        "persist_debug_traces": False,
+        "supported_extensions": [
+            ".txt",
+            ".md",
+            ".py",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".csv",
+            ".log",
+            ".pdf",
+            ".docx",
+            ".xlsx",
+        ],
+    },
     "assistant": {
         "tts_voice": "af_heart",
         "follow_up_mode": True,
@@ -140,6 +182,7 @@ SEARXNG_URL = SETTINGS["services"]["searxng_url"]
 PROMPT_TEMPLATE = "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
 
 RAG_SETTINGS = SETTINGS["rag"]
+RAG_SERVICE_SETTINGS = SETTINGS["rag_service"]
 
 WAKE_WORD_SETTINGS = SETTINGS["wake_word"]
 SPEECH_SETTINGS = SETTINGS["speech"]

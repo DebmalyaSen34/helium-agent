@@ -44,6 +44,31 @@ chunk_overlap_chars = 100
 safe_roots = ["."]
 supported_extensions = [".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml", ".toml", ".csv", ".log"]
 
+[rag_service]
+enabled = true
+service_url = "http://127.0.0.1:8765"
+host = "127.0.0.1"
+port = 8765
+auto_start = false
+fail_closed = true
+safe_roots = ["."]
+cache_dir = ".cache/rag_service"
+max_bytes_per_file = 25000000
+evidence_budget_chars = 16000
+full_text_budget_chars = 12000
+max_chunks = 600
+max_candidates = 24
+max_evidence_chunks = 8
+embedding_model = "BAAI/bge-m3"
+fallback_embedding_model = "BAAI/bge-base-en-v1.5"
+reranker_model = "BAAI/bge-reranker-base"
+device = "auto"
+batch_size = 8
+timeout_seconds = 120
+rag_debug = false
+persist_debug_traces = false
+supported_extensions = [".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml", ".toml", ".csv", ".log", ".pdf", ".docx", ".xlsx"]
+
 [assistant]
 tts_voice = "af_heart"
 follow_up_mode = true

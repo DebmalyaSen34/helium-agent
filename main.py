@@ -24,6 +24,10 @@ from core.llm import generate_response
 from engine.stt import build_speech_config, speech_to_text
 from engine.tts import text_to_speech
 from engine.wake_word import build_wake_config, calibrate_microphone, wake_word_detection
+from rag_service.client import RagServiceClient
+from rag_service.config import load_config as load_rag_service_config
+from rag_service.models import RagError
+from rag_service.terminal import resolve_single_mention
 from utils.start_animation import render_startup_intro
 from utils.audio import play_status_sound
 from utils.health import run_startup_health_checks
@@ -291,6 +295,30 @@ def print_health_checks() -> None:
     console.print(app_panel(table, title="Health", border_style="green"))
 
 
+def prepare_rag_prompt(user_text: str) -> str:
+    config = load_rag_service_config()
+    if not config.enabled or "@" not in user_text:
+        return user_text
+
+    mention = resolve_single_mention(user_text, config)
+    if mention is None:
+        return user_text
+
+    set_state("Attachment", "extracting -> indexing -> retrieving")
+    client = RagServiceClient(config)
+    evidence = client.evidence_for_path(
+        mention.file_path,
+        mention.question,
+        debug=config.rag_debug,
+    )
+    citations = evidence.get("citations") or []
+    detail = f"{mention.file_path.name}"
+    if citations:
+        detail += f" / {len(citations)} citations"
+    set_state("Attachment ready", detail)
+    return str(evidence["prompt"])
+
+
 def main(mode: str = "voice"):
     if mode == "text":
         print_header("text")
@@ -314,8 +342,15 @@ def main(mode: str = "voice"):
                     if tool_name == "search_web":
                         sources.extend(extract_web_sources(tool_result))
 
+                try:
+                    llm_prompt = prepare_rag_prompt(user_text)
+                except RagError as exc:
+                    set_state("Attachment error")
+                    print_chat_message("Error", exc.message, style="red")
+                    continue
+
                 reply_generator = generate_response(
-                    user_text,
+                    llm_prompt,
                     confirm_tool=confirm_tool,
                     on_state=set_state,
                     on_metrics=metrics.update,

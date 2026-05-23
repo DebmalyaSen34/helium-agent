@@ -2,7 +2,9 @@
 
 # Helium Agent
 
-Helium is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
+> **Important:** Voice support is still under development so kindly use TEXT mode.
+
+Helium is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, RAG support and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
 
 ## What It Can Do
 
@@ -16,6 +18,7 @@ Helium is a local-first AI assistant with a voice pipeline, tool-calling agent l
 - **Follow-up mode:** Keeps listening briefly after a reply so you can continue without repeating the wake word.
 - **Web UI:** Includes a FastAPI WebSocket backend and a React/Vite frontend for browser-based chat.
 - **Terminal UX:** Uses `rich` for readable console output and macOS `afplay` cues for wake/sleep sounds.
+- **Add terminal `@file` support:** RAG feature ground answers in local files. Supports code, PDF, DOCX and CSV.
 
 ## Project Structure
 
@@ -24,6 +27,7 @@ Helium/
 ├── main.py                 # Voice assistant entry point
 ├── assistant.py            # Assistant-facing orchestration helpers
 ├── requirements.txt        # Python dependencies
+├── requirements-rag.txt        # Heavy RAG dependencies
 ├── docker-compose.yml      # API + frontend containers
 ├── Dockerfile.api          # FastAPI backend image
 ├── Dockerfile.frontend     # React frontend image
@@ -45,6 +49,7 @@ Helium/
 │   └── package.json        # Vite scripts and frontend dependencies
 ├── memory/
 │   └── graph.py            # Local memory graph support
+├── rag_service/            # standalone document intelligence FastAPI service
 ├── tools/
 │   ├── registry.py         # Tool definitions and prompt context
 │   ├── file_ops.py         # File creation tool
@@ -96,6 +101,13 @@ Default service URLs are configured in [`config/settings.py`](config/settings.py
 
    ```bash
    pip install -r requirements.txt
+   pip install -r requirements-rag.txt
+   ```
+
+4. Doctor command for RAG check:
+
+   ```bash
+   python -m rag_service doctor
    ```
 
 If audio dependencies fail to build, install PortAudio first, then rerun the Python dependency install.
@@ -134,7 +146,7 @@ docker run -d -p 8080:8080 \
 
 If SearxNG is unavailable, Helium falls back to DDGS.
 
-## Run The Voice Assistant
+## Run The Assistant
 
 1. Confirm the LLM service is running.
 2. Confirm your microphone is connected and authorized.
@@ -162,6 +174,13 @@ Open Safari.
 Compare India and China GDP in 2025.
 Why is the Indian Rupee falling recently?
 Give me a report on the latest AI regulation changes in the EU.
+```
+
+RAG request example:
+
+```text
+@README.md what does this project do?
+@docs/plan.pdf summarize the risks
 ```
 
 ## Run The Web UI

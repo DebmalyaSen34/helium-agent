@@ -14,3 +14,6 @@ docs/
 outputs/
 .env
 .DS_Store
+.cache/
+.idea/
+.vscode/
