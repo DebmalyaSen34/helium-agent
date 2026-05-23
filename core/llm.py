@@ -201,7 +201,8 @@ def generate_response(
             # current_sentence += token
 
             # Detect tool call
-            if full_reply.strip().startswith("{"):
+            stripped_reply = full_reply.strip()
+            if stripped_reply.startswith("{") or "<action>" in stripped_reply or '"tool":' in stripped_reply:
                 is_tool_call = True
 
             # Stream sentence-by-sentence

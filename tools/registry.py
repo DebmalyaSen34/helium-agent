@@ -10,6 +10,7 @@ from tools.system_ops import open_app, get_time
 from tools.file_ops import create_file
 from tools.search.hybrid_fetch import fetch_url_content_mvp
 from tools.search.searxng import search_searxng
+from tools.bash_ops import execute_bash
 from tools.search.browse_url import browse_url
 from tools.web_search import search_web
 from tools.research.pipeline import research_query
@@ -32,6 +33,7 @@ AVAILABLE_TOOLS = {
     "open_app": ToolDefinition(open_app, "Opens a macOS application.", "risky"),
     "get_time": ToolDefinition(get_time, "Returns the current system time.", "safe"),
     "browse_url": ToolDefinition(browse_url, "Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text.", "safe"),
+    "execute_bash": ToolDefinition(execute_bash, "Executes a single-shot bash command on the macOS host system within a 30-second timeout. For sequential dependent steps (like navigating directories), chain commands using &&.", "risky")
 }
 
 TOOL_PROMPT = """<available_tools>
@@ -48,13 +50,14 @@ TOOL_PROMPT = """<available_tools>
 6. open_app(app_name: str) - Opens a macOS application. Permission: risky (user confirmation required).
 7. get_time() - Returns the current system time. Permission: safe.
 8. browse_url(url: str) - Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text. Use when a specific URL link is provided. Permission: safe.
+9. execute_bash(command: str) - Executes a single-shot bash command on the macOS host system within a 30-second timeout. Read-only commands (like ls, cat, git diff) run automatically without prompt. Modifying commands (like rm, touch, python, npm) require explicit user approval. Chain sequential dependent commands using &&. Permission: conditional (automatic for safe read-only queries, risky for system modifications).
 </available_tools>
 
 <json_contract>
 When executing a tool, you MUST output a single valid JSON Action block enclosed strictly inside <action> and </action> tags.
 - The JSON object must contain "tool" and "args" keys.
-- You MUST escape all double quotes inside content strings with \\".
-- Do NOT use raw newlines inside JSON content strings; use the literal characters \\n instead.
+- You MUST escape all double quotes inside content strings with \".
+- Do NOT use raw newlines inside JSON content strings; use the literal characters \n instead.
 </json_contract>
 
 <examples>
@@ -74,7 +77,17 @@ Input: Write a hello world Python script in hello.py
 Writing a simple Python script as requested. This requires creating a file hello.py with the print statement content.
 </thought>
 <action>
-{"tool": "create_file", "args": {"filename": "hello.py", "content": "print(\\"Hello, World!\\")\\n"}}
+{"tool": "create_file", "args": {"filename": "hello.py", "content": "print(\"Hello, World!\")\n"}}
+</action>
+</example>
+
+<example>
+Input: Compile the typescript project and list its build outputs
+<thought>
+The user wants to compile the typescript project and list build outputs. This requires chaining commands: compiling with tsc, then listing the contents of the dist folder using bash.
+</thought>
+<action>
+{"tool": "execute_bash", "args": {"command": "npm run build && ls -la dist"}}
 </action>
 </example>
 </examples>
@@ -130,10 +143,20 @@ def execute_tool(
     if tool_name in AVAILABLE_TOOLS:
         try:
             tool = AVAILABLE_TOOLS[tool_name]
-            if tool.permission == "risky":
+            
+            # Dynamic permission check for execute_bash
+            permission = tool.permission
+            if tool_name == "execute_bash":
+                from tools.bash_ops import is_command_safe
+                if is_command_safe(args.get("command", "")):
+                    permission = "safe"
+                else:
+                    permission = "risky"
+
+            if permission == "risky":
                 if confirm_tool is None:
                     return f"Tool '{tool_name}' needs confirmation before it can run."
-                if not confirm_tool(tool_name, args, tool.permission):
+                if not confirm_tool(tool_name, args, permission):
                     return f"Tool '{tool_name}' was cancelled by the user."
 
             result = tool.function(**args)

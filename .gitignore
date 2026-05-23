@@ -8,6 +8,7 @@ __pycache__/
 *.sqlite
 *.log
 .agents/
+.agent/
 command_history.json
 docs/
 .worktrees/

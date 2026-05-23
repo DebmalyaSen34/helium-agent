@@ -17,6 +17,31 @@ class RegistryTests(unittest.TestCase):
         response = '{"tool": "get_time", "args": {}}'
         self.assertIn("executed successfully", execute_tool(response))
 
+    def test_bash_tool_modifying_requires_confirmation(self):
+        response = '{"tool": "execute_bash", "args": {"command": "rm -rf test"}}'
+        self.assertIn("needs confirmation", execute_tool(response))
+
+    def test_bash_tool_safe_runs_without_confirmation(self):
+        response = '{"tool": "execute_bash", "args": {"command": "echo hello"}}'
+        self.assertIn("executed successfully", execute_tool(response))
+
+
+    def test_bash_tool_can_be_cancelled(self):
+        # execute_bash can be cancelled by user
+        response = '{"tool": "execute_bash", "args": {"command": "echo risky > dummy.txt"}}'
+        result = execute_tool(response, confirm_tool=lambda name, args, permission: False)
+        self.assertIn("cancelled", result)
+
+    def test_bash_tool_can_be_approved(self):
+        # execute_bash runs when approved
+        response = '{"tool": "execute_bash", "args": {"command": "echo risky > dummy.txt"}}'
+        result = execute_tool(response, confirm_tool=lambda name, args, permission: True)
+        self.assertIn("executed successfully", result)
+        # Cleanup
+        import os
+        if os.path.exists("dummy.txt"):
+            os.remove("dummy.txt")
+
 
 if __name__ == "__main__":
     unittest.main()
