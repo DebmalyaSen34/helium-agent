@@ -12,7 +12,7 @@ from rich.console import Console
 
 from config.settings import (
     ASSISTANT_PERSONA,
-    API_MODEL,
+    API_MODEL, MIMO_MODEL
 )
 
 from utils.check_llm_api import hit_api
@@ -169,8 +169,8 @@ def generate_response(
             "<start_of_turn>",
             "User:",
             "Current User:",
-            "</start_of_turn>",
-            "</end_of_turn>",
+            # "</start_of_turn>",
+            # "</end_of_turn>",
         ],
     }
 
@@ -284,7 +284,6 @@ def generate_response(
                 }
 
                 final_reply = ""
-                follow_up_sentence = ""
 
                 for item in stream_openrouter_response(
                     follow_up_payload
@@ -296,18 +295,7 @@ def generate_response(
                     token = clean_token(item)
 
                     final_reply += token
-                    follow_up_sentence += token
-
-                    if any(p in token for p in [".", "?", "!"]):
-                        yield clean_token(
-                            follow_up_sentence.strip()
-                        )
-                        follow_up_sentence = ""
-
-                if follow_up_sentence.strip():
-                    yield clean_token(
-                        follow_up_sentence.strip()
-                    )
+                    yield token
 
                 reply = clean_token(final_reply.strip())
 

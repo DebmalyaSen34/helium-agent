@@ -19,6 +19,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "ollama_url": "http://127.0.0.1:11434/api/generate",
         "ollama_model": "gemma4:e2b",
         "api_model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "mimo_model": "mimo-v2.5-pro",
         "searxng_url": "http://127.0.0.1:8080/search",
         "health_timeout_seconds": 1.5,
         "local": True,
@@ -182,6 +183,7 @@ LLAMA_CPP_URL = SETTINGS["services"]["llama_cpp_url"]
 OLLAMA_URL = SETTINGS["services"]["ollama_url"]
 OLLAMA_MODEL = SETTINGS["services"]["ollama_model"]
 API_MODEL = SETTINGS["services"]["api_model"]
+MIMO_MODEL = SETTINGS["services"]["mimo_model"]
 LOCAL = SETTINGS["services"].get("local", True)
 
 SEARXNG_URL = SETTINGS["services"]["searxng_url"]
