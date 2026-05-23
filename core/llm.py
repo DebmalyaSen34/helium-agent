@@ -75,6 +75,12 @@ def stream_openrouter_response(payload: dict):
         try:
             data = json.loads(data_str)
 
+            if "usage" in data and data["usage"]:
+                yield {
+                    "usage": data["usage"],
+                }
+                continue
+
             token = (
                 data.get("choices", [{}])[0]
                 .get("delta", {})
@@ -147,6 +153,9 @@ def generate_response(
         "messages": messages,
         "temperature": 0.3,
         "stream": True,
+        "stream_options": {
+            "include_usage": True,
+        },
         "stop": [
             "<end_of_turn>",
             "<start_of_turn>",
@@ -163,14 +172,22 @@ def generate_response(
         current_sentence = ""
         is_tool_call = False
 
-        for token in stream_openrouter_response(payload):
+        follow_up_start = time.time()
+        follow_up_think_end = None
+
+        for item in stream_openrouter_response(payload):
+
+            if isinstance(item, dict) and "usage" in item:
+                token_count += item["usage"].get("completion_tokens", 0)
+                continue
+
+            if follow_up_think_end is None:
+                follow_up_think_end = time.time()
 
             if think_end is None:
                 think_end = time.time()
 
-            token_count += 1
-
-            token = clean_token(token)
+            token = clean_token(item)
 
             full_reply += token
             # current_sentence += token
@@ -252,18 +269,22 @@ def generate_response(
                     "messages": follow_up_messages,
                     "temperature": 0.3,
                     "stream": True,
+                    "stream_options": {
+                        "include_usage": True,
+                    },
                 }
 
                 final_reply = ""
                 follow_up_sentence = ""
 
-                for token in stream_openrouter_response(
+                for item in stream_openrouter_response(
                     follow_up_payload
                 ):
+                    if isinstance(item, dict) and "usage" in item:
+                        token_count += item["usage"].get("completion_tokens", 0)
+                        continue
 
-                    token_count += 1
-
-                    token = clean_token(token)
+                    token = clean_token(item)
 
                     final_reply += token
                     follow_up_sentence += token
@@ -320,6 +341,9 @@ def generate_response(
         #    if think_time
         #    else 1
         # )
+
+        if is_tool_call and follow_up_think_end:
+            think_time += (follow_up_think_end - follow_up_start)
 
         total_time = end_time - start_time
 
