@@ -25,6 +25,33 @@ class ParserTests(unittest.TestCase):
             {"tool": "search_web", "args": {"query": "weather in London", "num_results": 3}},
         )
 
+    def test_xml_wrapped_action_parsing(self):
+        from core.orchestrator import extract_action
+        
+        # Test Case 1: XML-style thought and action blocks
+        output_xml = """<thought>I should fetch the current time.</thought>
+<action>
+{"tool": "get_time", "args": {}}
+</action>"""
+        self.assertEqual(
+            extract_action(output_xml),
+            {"tool": "get_time", "args": {}}
+        )
+
+        # Test Case 2: Legacy "Action:" prefix
+        output_legacy = "Thought: I need to search.\nAction: {\"tool\": \"search_web\", \"args\": {\"query\": \"test\"}}"
+        self.assertEqual(
+            extract_action(output_legacy),
+            {"tool": "search_web", "args": {"query": "test"}}
+        )
+
+        # Test Case 3: Raw brace JSON format fallback
+        output_raw = '{"tool": "get_time", "args": {}}'
+        self.assertEqual(
+            extract_action(output_raw),
+            {"tool": "get_time", "args": {}}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

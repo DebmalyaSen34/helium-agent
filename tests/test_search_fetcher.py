@@ -21,6 +21,7 @@ HTML = """
 """
 
 
+@patch("tools.search.fetcher.BROWSER_SETTINGS", {"use_playwright": False, "fallback_only": True})
 class ContentFetcherTests(unittest.TestCase):
     def test_fetcher_extracts_headings_lists_paragraphs_and_tables(self):
         response = Mock()

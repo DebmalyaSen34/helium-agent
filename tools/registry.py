@@ -34,48 +34,56 @@ AVAILABLE_TOOLS = {
     "browse_url": ToolDefinition(browse_url, "Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text.", "safe"),
 }
 
-TOOL_PROMPT = """
-You have access to the following tools:
-1. create_file(filename: str, content: str) - Creates or overwrites a file. Permission: risky, user confirmation required.
-2. search_web(query: str, num_results: int = 5) - Searches the web.
+TOOL_PROMPT = """<available_tools>
+1. create_file(filename: str, content: str) - Creates or overwrites a file in the project. Permission: risky (user confirmation required).
+2. search_web(query: str, num_results: int = 5) - Searches the web and returns structured evidence.
    CRITICAL SEARCH RULES:
-   - Use this IMMEDIATELY for news, facts, scores, or any knowledge beyond your cutoff data.
-   - Do NOT ask the user to clarify broad requests (e.g., "latest news"). Invent a broad query (e.g., "latest world news today") and search immediately.
-   - When interpreting the search results, EXTRACT HARD FACTS (e.g., "Team X won 3-0"). Do NOT summarize the search result descriptions (e.g., avoid "This article talks about...").
-   - Use search_web for simple one-hop factual lookups.
-3. research_query(query: str, max_sources: int = 8) - Researches complex analytical questions using multiple searches and citations. Permission: safe.
-   Use research_query for:
-   - comparisons
-   - why/how questions about recent events
-   - economics, markets, policy, politics, regulations, or geopolitical analysis
-   - questions asking for detailed reports, trends, impacts, or explanations
-4. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact or preference into long-term memory. Permission: safe.
-5. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts and preferences. Permission: safe.
-6. open_app(app_name: str) - Opens a macOS application (e.g., 'Safari', 'Calculator'). Permission: risky, user confirmation required.
+   - Use IMMEDIATELY for news, facts, scores, or any knowledge beyond your cutoff data.
+   - Do NOT ask user to clarify broad requests. Invent a smart query and search immediately.
+   - Extract exact facts (e.g. "Team X won 3-0"). Do NOT describe the articles.
+3. research_query(query: str, max_sources: int = 8) - Researches complex analytical questions using multiple searches. Permission: safe.
+   - Use for comparisons, detailed reports, market trends, policies, or complex why/how queries.
+4. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact/preference into long-term memory. Permission: safe.
+5. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts/preferences. Permission: safe.
+6. open_app(app_name: str) - Opens a macOS application. Permission: risky (user confirmation required).
 7. get_time() - Returns the current system time. Permission: safe.
-8. browse_url(url: str) - Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text. Use this when the user points you to a specific web link. Permission: safe.
+8. browse_url(url: str) - Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text. Use when a specific URL link is provided. Permission: safe.
+</available_tools>
 
-If you need to use a tool, you MUST respond in the exact JSON format. You MUST think about your plan first.
+<json_contract>
+When executing a tool, you MUST output a single valid JSON Action block enclosed strictly inside <action> and </action> tags.
+- The JSON object must contain "tool" and "args" keys.
+- You MUST escape all double quotes inside content strings with \\".
+- Do NOT use raw newlines inside JSON content strings; use the literal characters \\n instead.
+</json_contract>
 
-Example (search_web):
-{"plan": "The user wants broad sports news. I will search for today's sports highlights.", "tool": "search_web", "args": {"query": "latest sports news highlights today"}}
+<examples>
+<example>
+Input: What's the latest tech news?
+<thought>
+The user is asking for recent tech news. I should formulate a broad search query to fetch the latest technology headlines.
+</thought>
+<action>
+{"tool": "search_web", "args": {"query": "latest technology news headlines today"}}
+</action>
+</example>
 
-Example (research_query):
-{"plan": "The user asks for a recent macroeconomic explanation. I will run a research query with multiple sources.", "tool": "research_query", "args": {"query": "Why is Indian Rupee falling recently?"}}
+<example>
+Input: Write a hello world Python script in hello.py
+<thought>
+Writing a simple Python script as requested. This requires creating a file hello.py with the print statement content.
+</thought>
+<action>
+{"tool": "create_file", "args": {"filename": "hello.py", "content": "print(\\"Hello, World!\\")\\n"}}
+</action>
+</example>
+</examples>
 
-Example (create_file):
-{"plan": "Writing a simple C++ program based on user request.", "tool": "create_file", "args": {"filename": "hello.cpp", "content": "#include <iostream>\\nint main() {\\n    std::cout << \\"Hello\\" << std::endl;\\n    return 0;\\n}"}}
-
-CRITICAL RULES FOR JSON:
-- OUTPUT ONLY JSON. NO TEXT BEFORE OR AFTER JSON.
-- The entire JSON object MUST be on a single line.
-- Do NOT use raw newlines inside the content string. Use the literal characters \\n.
-- You MUST escape all double quotes inside the content string with \\".
-
-For web answers, use the structured evidence returned by search_web. Cite source URLs when they are present. If the evidence says confidence is low or partial, say that clearly instead of guessing.
-
-If you do not need a tool, just respond with conversational text.
-"""
+<evidence_handling>
+- For web answers, use the structured evidence returned by search_web.
+- Cite sources and URLs when they are present.
+- If the evidence says confidence is low or partial, state that clearly instead of guessing.
+</evidence_handling>"""
 
 
 def execute_react_tool(action_dict: dict) -> str:
