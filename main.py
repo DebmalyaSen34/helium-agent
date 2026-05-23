@@ -320,6 +320,10 @@ def prepare_rag_prompt(user_text: str) -> str:
 
 
 def main(mode: str = "voice"):
+    from tools.memory_ops import initialize_session
+    initialize_session()
+    console.print("[dim]:: [Session] In-memory SQLite session memory initialized.[/dim]")
+
     if mode == "text":
         print_header("text")
         console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")

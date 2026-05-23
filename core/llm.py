@@ -97,17 +97,25 @@ def stream_openrouter_response(payload: dict):
 
 
 def build_messages(prompt: str) -> list[dict]:
+    from tools.memory_ops import get_relevant_memories
 
     now = datetime.now().strftime("%B %d, %Y")
+
+    system_content = (
+        f"{ASSISTANT_PERSONA}\n\n"
+        f"{TOOL_PROMPT}\n\n"
+        f"Today's Date: {now}"
+    )
+
+    memories = get_relevant_memories(prompt)
+    if memories:
+        memories_text = "\n".join(f"- {m}" for m in memories)
+        system_content += f"\n\n=== RELEVANT SESSION MEMORIES ===\n{memories_text}\n================================"
 
     messages = [
         {
             "role": "system",
-            "content": (
-                f"{ASSISTANT_PERSONA}\n\n"
-                f"{TOOL_PROMPT}\n\n"
-                f"Today's Date: {now}"
-            ),
+            "content": system_content,
         }
     ]
 

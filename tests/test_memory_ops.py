@@ -1,23 +1,20 @@
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
-
 from tools import memory_ops
 
 
 class MemoryOpsTests(unittest.TestCase):
-    def test_structured_memory_migrates_old_list(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            memory_file = Path(tmpdir) / "memory.json"
-            memory_file.write_text('["My name is Deb"]', encoding="utf-8")
+    def setUp(self):
+        memory_ops.initialize_session()
 
-            with patch.object(memory_ops, "MEMORY_FILE", memory_file):
-                memory_ops.remember_fact("I prefer concise answers")
-                retrieved = memory_ops.retrieve_facts()
+    def test_remember_and_retrieve_ops(self):
+        # Store facts
+        memory_ops.remember_fact("Hello, I am Debmalya")
+        memory_ops.remember_fact("I prefer markdown formatting", "preferences")
 
-        self.assertIn("Facts: My name is Deb", retrieved)
-        self.assertIn("Preferences: I prefer concise answers", retrieved)
+        # Retrieve facts
+        retrieved = memory_ops.retrieve_facts()
+        self.assertIn("Facts: Hello, I am Debmalya", retrieved)
+        self.assertIn("Preferences: I prefer markdown formatting", retrieved)
 
 
 if __name__ == "__main__":
