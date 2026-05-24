@@ -1,24 +1,42 @@
-version: '3.8'
-
 services:
-  api:
-    build: 
+  helium:
+    image: jarvis-runtime:latest
+    build:
       context: .
-      dockerfile: Dockerfile.api
-    ports:
-      - "8080:8080"
-    environment:
-      # Pass the local IP of your Llama.cpp instance here so python can talk to it
-      - LLAMA_HOST=http://host.docker.internal:3000 
-      - SEARXNG_HOST=http://host.docker.internal:8080 # Assuming searxng 
+      dockerfile: Dockerfile.terminal
+    command: ["python", "main.py", "--mode", "text"]
+    env_file:
+      - .env
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/workspace
+      - rag-cache:/workspace/.cache/rag_service
+      - model-cache:/cache
+    depends_on:
+      rag_service:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+  rag_service:
+    image: jarvis-runtime:latest
+    command: ["python", "-m", "uvicorn", "rag_service.api:app", "--host", "0.0.0.0", "--port", "8765"]
+    env_file:
+      - .env
+    volumes:
+      - .:/workspace
+      - rag-cache:/workspace/.cache/rag_service
+      - model-cache:/cache
     ports:
-      - "80:80"
-    depends_on:
-      - api
+      - "8765:8765"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  rag-cache:
+  model-cache:

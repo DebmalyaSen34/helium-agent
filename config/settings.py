@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import os
+
 from pathlib import Path
 from typing import Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 try:
     import tomllib
@@ -25,7 +30,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "local": True,
     },
     "browser": {
-        "use_playwright": True,
+        "use_playwright": os.getenv("USE_PLAYWRIGHT", "true").lower() == "true",
         "fallback_only": True,
         "timeout_seconds": 8.0,
         "headless": True,
@@ -176,8 +181,46 @@ def load_settings(path: Path = SETTINGS_FILE) -> dict[str, Any]:
 
     return _deep_merge(DEFAULT_SETTINGS, user_settings)
 
+def _env_bool(name: str) -> bool | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
-SETTINGS = load_settings()
+
+def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
+    merged = settings.copy()
+
+    value_overrides = {
+        ("services", "llama_cpp_url"): os.getenv("HELIUM_LLAMA_CPP_URL"),
+        ("services", "api_model"): os.getenv("LLM_MODEL") or os.getenv("HELIUM_API_MODEL"),
+        ("rag_service", "service_url"): os.getenv("HELIUM_RAG_SERVICE_URL"),
+        ("rag_service", "host"): os.getenv("HELIUM_RAG_HOST"),
+        ("rag_service", "port"): os.getenv("HELIUM_RAG_PORT"),
+    }
+
+    bool_overrides = {
+        ("browser", "use_playwright"): _env_bool("USE_PLAYWRIGHT"),
+        ("browser", "headless"): _env_bool("PLAYWRIGHT_HEADLESS"),
+    }
+
+    for (section, key), value in value_overrides.items():
+        if value is None:
+            continue
+        section_values = dict(merged.get(section, {}))
+        section_values[key] = int(value) if key == "port" else value
+        merged[section] = section_values
+
+    for (section, key), value in bool_overrides.items():
+        if value is None:
+            continue
+        section_values = dict(merged.get(section, {}))
+        section_values[key] = value
+        merged[section] = section_values
+
+    return merged
+
+SETTINGS = _apply_env_overrides(load_settings())
 
 LLAMA_CPP_URL = SETTINGS["services"]["llama_cpp_url"]
 OLLAMA_URL = SETTINGS["services"]["ollama_url"]

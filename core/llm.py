@@ -12,7 +12,7 @@ from rich.console import Console
 
 from config.settings import (
     ASSISTANT_PERSONA,
-    API_MODEL, MIMO_MODEL
+    API_MODEL
 )
 
 from utils.check_llm_api import hit_api
@@ -22,8 +22,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 console = Console()
-
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 conversation_history = []
 MAX_HISTORY = 10
@@ -157,7 +155,7 @@ def generate_response(
     messages = build_messages(prompt)
 
     payload = {
-        "model": os.getenv("API_MODEL", API_MODEL),
+        "model": os.getenv("LLM_MODEL", API_MODEL),
         "messages": messages,
         "temperature": 0.3,
         "stream": True,
@@ -274,7 +272,7 @@ def generate_response(
                 ]
 
                 follow_up_payload = {
-                    "model": os.getenv("API_MODEL", API_MODEL),
+                    "model": os.getenv("LLM_MODEL", API_MODEL),
                     "messages": follow_up_messages,
                     "temperature": 0.3,
                     "stream": True,
