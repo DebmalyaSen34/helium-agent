@@ -4,25 +4,31 @@ WORKDIR /workspace
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     HF_HOME=/cache/huggingface \
     SENTENCE_TRANSFORMERS_HOME=/cache/sentence-transformers
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     portaudio19-dev \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+    zlib1g-dev
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-COPY requirements.txt requirements-rag.txt ./
-RUN uv pip install --system --no-cache -r requirements.txt \
-    && uv pip install --system --no-cache -r requirements-rag.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --index-url https://download.pytorch.org/whl/cpu torch
 
-RUN python -m playwright install --with-deps chromium
+COPY requirements.txt requirements-rag.txt ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt -r requirements-rag.txt
+
+ENV PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.azureedge.net
+
+RUN python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
-CMD ["python", "main.py", "--mode", "text"] 
+CMD ["python", "main.py", "--mode", "text"]

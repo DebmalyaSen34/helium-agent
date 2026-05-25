@@ -1,0 +1,22 @@
+# Exclude Python environment and caches
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.cache/
+
+# Exclude Git history
+.git/
+.gitignore
+
+# Exclude local front-end dependencies & build outputs
+**/node_modules/
+**/dist/
+**/build/
+
+# Exclude databases and local secrets
+*.db
+.env
+.env.example

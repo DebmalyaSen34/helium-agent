@@ -11,6 +11,7 @@ services:
     tty: true
     volumes:
       - .:/workspace
+      - /workspace/.venv                        # Prevents host .venv from overlaying container
       - rag-cache:/workspace/.cache/rag_service
       - model-cache:/cache
     depends_on:
@@ -26,6 +27,7 @@ services:
       - .env
     volumes:
       - .:/workspace
+      - /workspace/.venv                        # Prevents host .venv from overlaying container
       - rag-cache:/workspace/.cache/rag_service
       - model-cache:/cache
     ports:

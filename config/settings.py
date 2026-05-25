@@ -207,6 +207,7 @@ def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     for (section, key), value in value_overrides.items():
         if value is None:
             continue
+        value = value.strip()
         section_values = dict(merged.get(section, {}))
         section_values[key] = int(value) if key == "port" else value
         merged[section] = section_values

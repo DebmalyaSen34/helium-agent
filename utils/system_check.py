@@ -8,18 +8,24 @@ load_dotenv()
 def check_llm_api():
 
     api_key = os.getenv("LLM_API_KEY", None)
+    if api_key:
+        api_key = api_key.strip()
 
     if not api_key:
         print("LLM_API_KEY is not set in environment variables.")
         return False
 
     api_url = os.getenv("LLM_API_URL", None)
+    if api_url:
+        api_url = api_url.strip()
 
     if not api_url:
         print("LLM_API_URL is not set in environment variables."    )
         return False
 
     llm_model = os.getenv("LLM_MODEL", None)
+    if llm_model:
+        llm_model = llm_model.strip()
 
     if not llm_model:
         print("LLM_MODEL is not set in environment variables.")

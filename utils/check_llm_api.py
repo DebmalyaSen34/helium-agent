@@ -6,10 +6,16 @@ load_dotenv()
 
 def hit_api(payload: dict, is_stream: bool = True):
     try:
+        url = os.getenv("LLM_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+        if url:
+            url = url.strip()
+        key = os.getenv("LLM_API_KEY", "")
+        if key:
+            key = key.strip()
         response = requests.post(
-            os.getenv("LLM_API_URL", "https://openrouter.ai/api/v1/chat/completions"),
+            url,
             headers={
-                "Authorization": f"Bearer {os.getenv('LLM_API_KEY', '')}"
+                "Authorization": f"Bearer {key}"
             },
             json=payload,
             stream=is_stream,
