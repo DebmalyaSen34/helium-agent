@@ -14,6 +14,10 @@ class SearchCompatibilityTests(unittest.TestCase):
         self.assertIn("confidence", TOOL_PROMPT.casefold())
         self.assertIn("sources", TOOL_PROMPT.casefold())
 
+    def test_file_tool_prompt_document_delete(self):
+        self.assertIn("delete_file", TOOL_PROMPT)
+        self.assertIn("permanently deletes", TOOL_PROMPT)
+        self.assertIn("project root", TOOL_PROMPT)
 
 if __name__ == "__main__":
     unittest.main()

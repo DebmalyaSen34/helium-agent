@@ -42,6 +42,19 @@ class RegistryTests(unittest.TestCase):
         if os.path.exists("dummy.txt"):
             os.remove("dummy.txt")
 
+    def test_file_read_tool_runs_without_confirmation(self):
+        response = '{"tool": "list_directory", "args": {"path": "."}}'
+        self.assertIn("executed successfully", execute_tool(response))
+
+    def test_file_write_tool_requires_confirmation(self):
+        response = '{"tool": "write_file", "args": {"path": "x.txt", "content": "hi"}}'
+        self.assertIn("needs confirmation", execute_tool(response))
+
+    def test_delete_file_requires_confirmation(self):
+        response = '{"tool": "delete_file", "args": {"path": "x.txt"}}'
+        self.assertIn("needs confirmation", execute_tool(response))
+
+
 
 if __name__ == "__main__":
     unittest.main()

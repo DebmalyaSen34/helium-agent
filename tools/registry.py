@@ -7,7 +7,24 @@ from typing import Any
 
 from tools.memory_ops import remember_fact, retrieve_facts
 from tools.system_ops import open_app, get_time
-from tools.file_ops import create_file
+from tools.file_ops import (
+    append_file,
+    checksum_file,
+    copy_file,
+    create_file,
+    delete_file,
+    diff_text,
+    list_directory,
+    mkdir,
+    move_file,
+    patch_file,
+    read_file,
+    replace_text,
+    search_text,
+    stat_file,
+    touch_file,
+    write_file,
+) 
 from tools.search.hybrid_fetch import fetch_url_content_mvp
 from tools.search.searxng import search_searxng
 from tools.bash_ops import execute_bash
@@ -33,34 +50,109 @@ AVAILABLE_TOOLS = {
     "open_app": ToolDefinition(open_app, "Opens a macOS application.", "risky"),
     "get_time": ToolDefinition(get_time, "Returns the current system time.", "safe"),
     "browse_url": ToolDefinition(browse_url, "Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text.", "safe"),
-    "execute_bash": ToolDefinition(execute_bash, "Executes a single-shot bash command on the macOS host system within a 30-second timeout. For sequential dependent steps (like navigating directories), chain commands using &&.", "risky")
+    "execute_bash": ToolDefinition(execute_bash, "Executes a single-shot bash command on the macOS host system within a 30-second timeout. For sequential dependent steps (like navigating directories), chain commands using &&.", "risky"),
+    "read_file": ToolDefinition(read_file, "Reads a UTF-8 text file inside the project root.", "safe"),
+    "write_file": ToolDefinition(write_file, "Creates or atomically overwrites a file inside the project root.", "risky"),
+    "append_file": ToolDefinition(append_file, "Appends UTF-8 text to a file inside the project root.", "risky"),
+    "delete_file": ToolDefinition(delete_file, "Permanently deletes a file or recursive directory inside the project root.", "risky"),
+    "copy_file": ToolDefinition(copy_file, "Copies a file or directory inside the project root.", "risky"),
+    "move_file": ToolDefinition(move_file, "Moves a file or directory inside the project root.", "risky"),
+    "list_directory": ToolDefinition(list_directory, "Lists files and directories inside the project root.", "safe"),
+    "search_text": ToolDefinition(search_text, "Searches UTF-8 text files inside the project root.", "safe"),
+    "replace_text": ToolDefinition(replace_text, "Performs guarded literal text replacement inside one project file.", "risky"),
+    "patch_file": ToolDefinition(patch_file, "Applies a guarded single-file unified patch inside the project root.", "risky"),
+    "mkdir": ToolDefinition(mkdir, "Creates a directory inside the project root.", "risky"),
+    "touch_file": ToolDefinition(touch_file, "Creates or updates a file timestamp inside the project root.", "risky"),
+    "stat_file": ToolDefinition(stat_file, "Returns metadata for a project file or directory.", "safe"),
+    "checksum_file": ToolDefinition(checksum_file, "Computes a checksum for a project file.", "safe"),
+    "diff_text": ToolDefinition(diff_text, "Previews a unified diff between a project file and proposed content.", "safe"),
 }
 
 TOOL_PROMPT = """<available_tools>
-1. create_file(filename: str, content: str) - Creates or overwrites a file in the project. Permission: risky (user confirmation required).
-2. search_web(query: str, num_results: int = 5) - Searches the web and returns structured evidence.
+<file_tools>
+File tools are restricted to the current project root.
+Use file tools instead of execute_bash for file manipulation.
+Prefer read_file before editing existing files.
+Prefer replace_text or patch_file for targeted edits.
+Use diff_text to preview full-file rewrites when useful.
+delete_file permanently deletes after user confirmation.
+
+1. read_file(path: str, start_line: int | null = null, end_line: int | null = null, max_chars: int = 20000) - Reads a UTF-8 text file. Permission: safe.
+2. write_file(path: str, content: str, mode: str = "overwrite") - Creates or atomically overwrites a UTF-8 text file. mode may be "overwrite" or "create_only". Permission: risky.
+3. append_file(path: str, content: str) - Appends UTF-8 text to a file. Permission: risky.
+4. delete_file(path: str, recursive: bool = false) - Permanently deletes a file, or a directory when recursive=true. Permission: risky.
+5. copy_file(source: str, destination: str, overwrite: bool = false) - Copies a file or directory. Permission: risky.
+6. move_file(source: str, destination: str, overwrite: bool = false) - Moves a file or directory. Permission: risky.
+7. list_directory(path: str = ".", recursive: bool = false, max_entries: int = 200) - Lists project files and directories. Permission: safe.
+8. search_text(query: str, path: str = ".", glob: str | null = null, case_sensitive: bool = false, max_matches: int = 100) - Searches UTF-8 text files. Permission: safe.
+9. replace_text(path: str, old: str, new: str, expected_count: int | null = null) - Performs guarded literal text replacement in one file. Permission: risky.
+10. patch_file(path: str, patch: str, expected_original_hash: str | null = null) - Applies a guarded single-file unified diff patch. Permission: risky.
+11. mkdir(path: str, parents: bool = true, exist_ok: bool = true) - Creates a directory. Permission: risky.
+12. touch_file(path: str) - Creates a file if absent or updates its timestamp. Permission: risky.
+13. stat_file(path: str) - Returns file or directory metadata. Permission: safe.
+14. checksum_file(path: str, algorithm: str = "sha256") - Computes a file checksum. Supported algorithms: sha256, sha1, md5. Permission: safe.
+15. diff_text(path: str, proposed_content: str, context_lines: int = 3) - Shows a unified diff without modifying the file. Permission: safe.
+16. create_file(filename: str, content: str) - Backwards-compatible alias for write_file(filename, content, mode="overwrite"). Permission: risky.
+</file_tools>
+
+<web_and_research_tools>
+17. search_web(query: str, num_results: int = 5) - Searches the web and returns structured evidence.
    CRITICAL SEARCH RULES:
    - Use IMMEDIATELY for news, facts, scores, or any knowledge beyond your cutoff data.
    - Do NOT ask user to clarify broad requests. Invent a smart query and search immediately.
    - Extract exact facts (e.g. "Team X won 3-0"). Do NOT describe the articles.
-3. research_query(query: str, max_sources: int = 8) - Researches complex analytical questions using multiple searches. Permission: safe.
+18. research_query(query: str, max_sources: int = 8) - Researches complex analytical questions using multiple searches. Permission: safe.
    - Use for comparisons, detailed reports, market trends, policies, or complex why/how queries.
-4. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact/preference into long-term memory. Permission: safe.
-5. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts/preferences. Permission: safe.
-6. open_app(app_name: str) - Opens a macOS application. Permission: risky (user confirmation required).
-7. get_time() - Returns the current system time. Permission: safe.
-8. browse_url(url: str) - Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text. Use when a specific URL link is provided. Permission: safe.
-9. execute_bash(command: str) - Executes a single-shot bash command on the macOS host system within a 30-second timeout. Read-only commands (like ls, cat, git diff) run automatically without prompt. Modifying commands (like rm, touch, python, npm) require explicit user approval. Chain sequential dependent commands using &&. Permission: conditional (automatic for safe read-only queries, risky for system modifications).
+19. browse_url(url: str) - Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text. Use when a specific URL link is provided. Permission: safe.
+</web_and_research_tools>
+
+<memory_and_system_tools>
+20. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact/preference into long-term memory. Permission: safe.
+21. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts/preferences. Permission: safe.
+22. open_app(app_name: str) - Opens a macOS application. Permission: risky.
+23. get_time() - Returns the current system time. Permission: safe.
+24. execute_bash(command: str) - Executes a single-shot bash command on the macOS host system within a 30-second timeout. Read-only commands run automatically without prompt. Modifying commands require explicit user approval. Prefer file tools for file manipulation. Permission: conditional.
+</memory_and_system_tools>
 </available_tools>
 
 <json_contract>
 When executing a tool, you MUST output a single valid JSON Action block enclosed strictly inside <action> and </action> tags.
 - The JSON object must contain "tool" and "args" keys.
-- You MUST escape all double quotes inside content strings with \".
-- Do NOT use raw newlines inside JSON content strings; use the literal characters \n instead.
+- You MUST escape all double quotes inside content strings with \\".
+- Do NOT use raw newlines inside JSON content strings; use the literal characters \\n instead.
 </json_contract>
 
 <examples>
+<example>
+Input: Read the first 40 lines of tools/registry.py
+<thought>
+The user wants to inspect a project file, so I should use read_file.
+</thought>
+<action>
+{"tool": "read_file", "args": {"path": "tools/registry.py", "start_line": 1, "end_line": 40}}
+</action>
+</example>
+
+<example>
+Input: Replace DEBUG = True with DEBUG = False in config.py
+<thought>
+This is a targeted file edit. I should use replace_text with expected_count to avoid broad accidental edits.
+</thought>
+<action>
+{"tool": "replace_text", "args": {"path": "config.py", "old": "DEBUG = True", "new": "DEBUG = False", "expected_count": 1}}
+</action>
+</example>
+
+<example>
+Input: Delete old_output.txt
+<thought>
+Deleting is permanent and risky, so this will require user confirmation.
+</thought>
+<action>
+{"tool": "delete_file", "args": {"path": "old_output.txt"}}
+</action>
+</example>
+
 <example>
 Input: What's the latest tech news?
 <thought>
@@ -72,19 +164,9 @@ The user is asking for recent tech news. I should formulate a broad search query
 </example>
 
 <example>
-Input: Write a hello world Python script in hello.py
-<thought>
-Writing a simple Python script as requested. This requires creating a file hello.py with the print statement content.
-</thought>
-<action>
-{"tool": "create_file", "args": {"filename": "hello.py", "content": "print(\"Hello, World!\")\n"}}
-</action>
-</example>
-
-<example>
 Input: Compile the typescript project and list its build outputs
 <thought>
-The user wants to compile the typescript project and list build outputs. This requires chaining commands: compiling with tsc, then listing the contents of the dist folder using bash.
+The user wants to compile the project. This is not a file manipulation task, so execute_bash is appropriate.
 </thought>
 <action>
 {"tool": "execute_bash", "args": {"command": "npm run build && ls -la dist"}}
@@ -97,7 +179,6 @@ The user wants to compile the typescript project and list build outputs. This re
 - Cite sources and URLs when they are present.
 - If the evidence says confidence is low or partial, state that clearly instead of guessing.
 </evidence_handling>"""
-
 
 def execute_react_tool(action_dict: dict) -> str:
     """Execute a ReAct-style JSON action from the local orchestrator."""
