@@ -18,3 +18,9 @@ outputs/
 .cache/
 .idea/
 .vscode/
+.claude/
+.codex/
+.graphify*
+AGENTS.md
+CLAUDE.md
+graphify-out/
