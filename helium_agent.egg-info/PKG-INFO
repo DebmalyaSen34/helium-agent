@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: helium-agent
-Version: 0.1.0
+Version: 0.1.1
 Summary: A terminal-focused AI agent with RAG and local tool capabilities
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
@@ -10,6 +10,18 @@ Requires-Dist: numpy
 Requires-Dist: prompt-toolkit
 Requires-Dist: python-dotenv
 Requires-Dist: pyyaml
+Requires-Dist: duckduckgo-search
+Requires-Dist: beautifulsoup4
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: playwright
+Provides-Extra: voice
+Requires-Dist: speechrecognition>=3.10.0; extra == "voice"
+Requires-Dist: kokoro>=0.9.0; extra == "voice"
+Requires-Dist: sounddevice>=0.4.0; extra == "voice"
+Requires-Dist: pyaudio>=0.2.11; extra == "voice"
+Requires-Dist: openwakeword>=0.6.0; extra == "voice"
+Requires-Dist: mlx-whisper>=0.1.0; extra == "voice"
 
 <img src="assets/Helium-agent-logo.png" width="1080" height="480" alt="Helium Agent Logo"/>
 

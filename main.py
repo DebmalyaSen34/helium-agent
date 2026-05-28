@@ -7,10 +7,25 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-import openwakeword
-import speech_recognition as sr
-from kokoro import KPipeline
-from openwakeword.model import Model
+try:
+    import openwakeword
+    import speech_recognition as sr
+    from kokoro import KPipeline
+    from openwakeword.model import Model
+    HAS_VOICE_DEP = True
+except ImportError:
+    HAS_VOICE_DEP = False
+    openwakeword = None
+    class DummySpeechRecognition:
+        class Recognizer:
+            pass
+        class WaitTimeoutError(Exception):
+            pass
+        class UnknownValueError(Exception):
+            pass
+    sr = DummySpeechRecognition
+    KPipeline = None
+    Model = None
 from rich import box
 from rich.console import Console, Group
 from rich.logging import RichHandler
@@ -23,9 +38,19 @@ from rich.text import Text
 
 from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS
 from core.llm import generate_response
-from engine.stt import build_speech_config, speech_to_text
-from engine.tts import text_to_speech
-from engine.wake_word import build_wake_config, calibrate_microphone, wake_word_detection
+try:
+    from engine.stt import build_speech_config, speech_to_text
+    from engine.tts import text_to_speech
+    from engine.wake_word import build_wake_config, calibrate_microphone, wake_word_detection
+    HAS_VOICE_ENGINES = True
+except ImportError:
+    HAS_VOICE_ENGINES = False
+    build_speech_config = None
+    speech_to_text = None
+    text_to_speech = None
+    build_wake_config = None
+    calibrate_microphone = None
+    wake_word_detection = None
 from rag_service.client import RagServiceClient
 from rag_service.config import load_config as load_rag_service_config
 from rag_service.models import RagError
@@ -443,6 +468,14 @@ def main(mode: str = "text", target_path: str = "."):
         return
 
     print_header("voice")
+    if not HAS_VOICE_DEP or not HAS_VOICE_ENGINES:
+        console.print(
+            "\n[bold red]Error: Voice mode dependencies are not installed.[/bold red]\n"
+            "To use voice mode, please install the optional voice packages:\n"
+            "  [green]pip install helium-agent[voice][/green]\n"
+        )
+        return
+
     set_state("Starting voice engines")
 
     wake_config = build_wake_config(WAKE_WORD_SETTINGS)
