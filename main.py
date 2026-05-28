@@ -82,6 +82,7 @@ logging.basicConfig(
 logger = logging.getLogger("rich")
 console = Console()
 _last_state_key: tuple[str, str | None] | None = None
+_active_status = None
 
 
 def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
@@ -253,15 +254,24 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     if not ASSISTANT_SETTINGS.get("confirm_risky_tools", True):
         return True
 
-    body = Text()
-    body.append("Tool: ", style="dim")
-    body.append(tool_name, style="bold")
-    body.append("\nPermission: ", style="dim")
-    body.append(permission, style="yellow")
-    body.append("\nArgs: ", style="dim")
-    body.append(repr(args))
-    console.print(app_panel(body, title="Confirm Tool", border_style="yellow"))
-    answer = Prompt.ask("Allow tool?", choices=["y", "n"], default="n")
+    global _active_status
+    if _active_status is not None:
+        _active_status.stop()
+
+    try:
+        body = Text()
+        body.append("Tool: ", style="dim")
+        body.append(tool_name, style="bold")
+        body.append("\nPermission: ", style="dim")
+        body.append(permission, style="yellow")
+        body.append("\nArgs: ", style="dim")
+        body.append(repr(args))
+        console.print(app_panel(body, title="Confirm Tool", border_style="yellow"))
+        answer = Prompt.ask("Allow tool?", choices=["y", "n"], default="n")
+    finally:
+        if _active_status is not None:
+            _active_status.start()
+
     return answer == "y"
 
 
@@ -444,6 +454,8 @@ def main(mode: str = "text", target_path: str = "."):
                     continue
 
                 with console.status("[cyan]Thinking...[/cyan]", spinner="dots") as status:
+                    global _active_status
+                    _active_status = status
                     def set_state_spinner(state: str):
                         if "Using" in state or "Attachment" in state:
                             status.update(f"[yellow]{state}...[/yellow]")
@@ -454,15 +466,18 @@ def main(mode: str = "text", target_path: str = "."):
                         else:
                             status.update(f"[dim]:: {state}[/dim]")
 
-                    reply_generator = generate_response(
-                        llm_prompt,
-                        confirm_tool=confirm_tool,
-                        on_state=set_state_spinner,
-                        on_metrics=metrics.update,
-                        on_tool_result=collect_tool_result,
-                        print_metrics=False,
-                    )
-                    reply_list = list(reply_generator)
+                    try:
+                        reply_generator = generate_response(
+                            llm_prompt,
+                            confirm_tool=confirm_tool,
+                            on_state=set_state_spinner,
+                            on_metrics=metrics.update,
+                            on_tool_result=collect_tool_result,
+                            print_metrics=False,
+                        )
+                        reply_list = list(reply_generator)
+                    finally:
+                        _active_status = None
                 
                 stream_reply(reply_list)
                 print_sources(sources)

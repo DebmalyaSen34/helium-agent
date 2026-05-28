@@ -27,3 +27,4 @@ graphify-out/
 .helium_history
 build/
 dist/
+*.egg-info

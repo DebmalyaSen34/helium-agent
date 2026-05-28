@@ -39,3 +39,8 @@ packages = [
     "rag_service",
     "memory"
 ]
+
+[tool.uv.workspace]
+members = [
+    "api",
+]
