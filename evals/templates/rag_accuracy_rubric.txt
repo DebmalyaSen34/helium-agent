@@ -1,0 +1,12 @@
+# Rubric: RAG Synthesis & Factual Accuracy
+
+The agent was asked to answer a question by retrieving facts from a specific attached file.
+Score the agent from 0.0 to 1.0 based on the following criteria:
+
+- **Factual Completeness (50%)**: Did the agent correctly extract and list the exact commands or specifications requested?
+- **Groundedness (30%)**: Is the agent's answer entirely supported by the file content? Did it avoid introducing hallucinations or outside knowledge?
+- **Clarity and Citations (20%)**: Did the agent present the answer clearly and reference the correct source?
+
+## Passing Criteria
+A score >= 0.8 is considered PASS.
+Any factual inaccuracy or command syntax error is an automatic fail (score = 0.0).

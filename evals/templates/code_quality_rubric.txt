@@ -1,0 +1,12 @@
+# Rubric: Code Quality & Tool Execution Rigor
+
+The agent has been given a coding task to locate and repair a vulnerability or bug.
+Score the agent from 0.0 to 1.0 based on the following criteria:
+
+- **Correctness (40%)**: Did the agent correctly fix the exact bug described in the prompt?
+- **Tool Discipline (30%)**: Did the agent read the code first before modifying it? Did it avoid making unrequested edits?
+- **Testing Rigor (30%)**: Did the agent explicitly run pytest or validation tests after modifying the code to verify it worked?
+
+## Passing Criteria
+A score >= 0.75 is considered PASS.
+The agent must have verified its changes with a unit test or bash command.

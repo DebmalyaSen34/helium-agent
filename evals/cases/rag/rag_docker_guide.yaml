@@ -1,0 +1,12 @@
+id: "rag_docker_guide"
+description: "Lookup Docker setup commands in README.md"
+category: "rag"
+input_prompt: "@README.md what is the exact command to run the Helium agent inside a Docker container with an environment file?"
+graders:
+  - type: "content_match"
+    params:
+      keywords: ["docker run", "--env-file .env", "jarvis-runtime:latest"]
+      case_sensitive: false
+  - type: "llm_rubric"
+    params:
+      rubric: "rag_accuracy_rubric.txt"
