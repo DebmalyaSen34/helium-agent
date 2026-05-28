@@ -360,10 +360,15 @@ def prepare_rag_prompt(user_text: str) -> str:
     return str(evidence["prompt"])
 
 
-def main(mode: str = "text", target_path: str = "."):
+def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
     workspace = Path(target_path).resolve()
     os.chdir(workspace)
     set_project_root(workspace)
+
+    if nuclear:
+        ASSISTANT_SETTINGS["confirm_risky_tools"] = False
+        warning_body = Text("Nuclear mode active. The agent will execute all risky tools without confirmation.", style="bold red")
+        console.print(app_panel(warning_body, title="WARNING", border_style="red"))
 
     # Check for missing API credentials during startup
     api_key = os.getenv("LLM_API_KEY")
@@ -639,9 +644,10 @@ def cli_entrypoint():
     parser = argparse.ArgumentParser(description="Helium Agent")
     parser.add_argument("path", type=str, nargs="?", default=".", help="Target workspace path")
     parser.add_argument("--mode", type=str, choices=["voice", "text"], default="text", help="Interaction mode (voice or text)")
+    parser.add_argument("--nuclear", action="store_true", help="Bypass all risky tool confirmations (run without asking permission)")
     args = parser.parse_args()
     
-    main(mode=args.mode, target_path=args.path)
+    main(mode=args.mode, target_path=args.path, nuclear=args.nuclear)
 
 
 if __name__ == "__main__":
