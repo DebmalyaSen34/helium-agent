@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helium-agent"
+version = "0.1.0"
+description = "A terminal-focused AI agent with RAG and local tool capabilities"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "rich",
+    "requests",
+    "numpy",
+    "prompt-toolkit",
+    "python-dotenv",
+    "pyyaml"
+]
+
+[project.scripts]
+helium = "main:cli_entrypoint"
+
+[tool.setuptools]
+py-modules = ["main"]
+packages = ["core", "tools", "config", "utils", "rag_service", "memory", "engine"]

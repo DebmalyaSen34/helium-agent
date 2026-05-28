@@ -1,8 +1,10 @@
 import logging
+import os
 import re
 import select
 import sys
 import argparse
+from pathlib import Path
 from typing import Any
 
 import openwakeword
@@ -32,6 +34,7 @@ from utils.start_animation import render_startup_intro
 from utils.audio import play_status_sound
 from utils.health import run_startup_health_checks
 from utils.history import last_heard, record_command
+from tools.file_ops import set_project_root
 from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.history import FileHistory
 from utils.completer import WorkspaceFileCompleter
@@ -322,10 +325,50 @@ def prepare_rag_prompt(user_text: str) -> str:
     return str(evidence["prompt"])
 
 
-def main(mode: str = "voice"):
+def main(mode: str = "text", target_path: str = "."):
+    workspace = Path(target_path).resolve()
+    os.chdir(workspace)
+    set_project_root(workspace)
+
+    # Check for missing API credentials during startup
+    api_key = os.getenv("LLM_API_KEY")
+    if not api_key:
+        console.print(app_panel(
+            "[bold cyan]Welcome to Helium Agent![/bold cyan]\n\n"
+            "I could not locate an [bold]LLM_API_KEY[/bold] in your environment.\n"
+            "Let's configure your global system settings. These will be saved in\n"
+            "[bold green]~/.helium.env[/bold green] and automatically work in any folder.",
+            title="Setup Wizard",
+            border_style="cyan"
+        ))
+        
+        entered_key = Prompt.ask("[bold green]1. Enter your LLM API Key (e.g. OpenRouter key)[/bold green]").strip()
+        
+        if entered_key:
+            entered_url = Prompt.ask("[bold green]2. Enter LLM API Base URL[/bold green]", default="https://openrouter.ai/api/v1").strip()
+            entered_model = Prompt.ask("[bold green]3. Enter default LLM Model[/bold green]", default="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").strip()
+            use_playwright = Prompt.ask("[bold green]4. Enable Playwright browser automation?[/bold green]", choices=["true", "false"], default="true").strip()
+            
+            global_env = Path.home() / ".helium.env"
+            try:
+                with open(global_env, "w") as f:
+                    f.write(f"LLM_API_KEY={entered_key}\n")
+                    f.write(f"LLM_API_URL={entered_url}\n")
+                    f.write(f"LLM_MODEL={entered_model}\n")
+                    f.write(f"USE_PLAYWRIGHT={use_playwright}\n")
+                
+                # Load newly created environment variables immediately into memory
+                from dotenv import load_dotenv
+                load_dotenv(global_env)
+                console.print(f"\n[green]Global configuration successfully saved to {global_env}![/green]\n")
+            except Exception as e:
+                console.print(f"[red]Error saving global config: {e}[/red]\n")
+        else:
+            console.print("[yellow]Key setup skipped. Agent starting with active environment values.[/yellow]\n")
+
     from tools.memory_ops import initialize_session
     initialize_session()
-    console.print("[dim]:: [Session] In-memory SQLite session memory initialized.[/dim]")
+    console.print(f"[dim]:: [Session] In-memory SQLite session memory initialized for {workspace}.[/dim]")
 
     if mode == "text":
         print_header("text")
@@ -531,9 +574,14 @@ def main(mode: str = "voice"):
             play_status_sound("sleep")
 
 
-if __name__ == "__main__":
+def cli_entrypoint():
     parser = argparse.ArgumentParser(description="Helium Agent")
-    parser.add_argument("--mode", type=str, choices=["voice", "text"], default="voice", help="Interaction mode (voice or text)")
+    parser.add_argument("path", type=str, nargs="?", default=".", help="Target workspace path")
+    parser.add_argument("--mode", type=str, choices=["voice", "text"], default="text", help="Interaction mode (voice or text)")
     args = parser.parse_args()
     
-    main(mode=args.mode)
+    main(mode=args.mode, target_path=args.path)
+
+
+if __name__ == "__main__":
+    cli_entrypoint()

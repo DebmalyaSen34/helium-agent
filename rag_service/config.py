@@ -56,7 +56,7 @@ class RagServiceConfig:
     @classmethod
     def from_settings(cls, settings: dict[str, Any] | None = None) -> "RagServiceConfig":
         raw = (settings or SETTINGS).get("rag_service", {})
-        root = BASE_DIR.resolve()
+        root = Path.cwd().resolve()
         safe_roots = raw.get("safe_roots", ["."])
         resolved_roots: list[Path] = []
         for safe_root in safe_roots:

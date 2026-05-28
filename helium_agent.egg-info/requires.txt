@@ -1,0 +1,6 @@
+rich
+requests
+numpy
+prompt-toolkit
+python-dotenv
+pyyaml

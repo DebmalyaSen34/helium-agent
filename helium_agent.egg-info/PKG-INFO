@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: helium-agent
+Version: 0.1.0
+Summary: A terminal-focused AI agent with RAG and local tool capabilities
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: rich
+Requires-Dist: requests
+Requires-Dist: numpy
+Requires-Dist: prompt-toolkit
+Requires-Dist: python-dotenv
+Requires-Dist: pyyaml
+
 <img src="assets/Helium-agent-logo.png" width="1080" height="480" alt="Helium Agent Logo"/>
 
 # Helium Agent

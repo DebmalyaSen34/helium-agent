@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def set_project_root(path: str | Path) -> None:
+    global PROJECT_ROOT
+    PROJECT_ROOT = Path(path).resolve()
+
+
 def _run(operation: str, path: str | None, call: Callable[[FileOperationService], FileOperationResult]) -> str:
     service = FileOperationService(PROJECT_ROOT)
     try:

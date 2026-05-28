@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
 
-load_dotenv()
+# 1. Project level overrides first
+load_dotenv(Path.cwd() / ".env")
+
+# 2. Fallback to global user settings
+load_dotenv(Path.home() / ".helium.env")
 
 try:
     import tomllib
