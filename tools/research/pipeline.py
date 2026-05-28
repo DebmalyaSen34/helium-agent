@@ -27,19 +27,15 @@ class ResearchPipeline:
         self.synthesizer = synthesizer or ResearchSynthesizer(self.source_policy)
 
     def run(self, query: str, max_sources: int = 8) -> str:
-        normalized = " ".join(query.strip().split())
-        if not normalized:
-            return self.synthesizer.render(
-                self.synthesizer.synthesize(
-                    self._empty_plan(query, max_sources=max_sources),
-                    [],
-                )
-            )
+        from tools.research.loop import ResearchLoop
 
-        plan = self.planner.plan(normalized, max_sources=max_sources)
-        evidence = self._collect_evidence(plan, max_sources=max_sources)
-        report = self.synthesizer.synthesize(plan, evidence)
-        return self.synthesizer.render(report)
+        loop = ResearchLoop(
+            search_pipeline=self.search_pipeline,
+            planner=self.planner,
+            synthesizer=self.synthesizer,
+            source_policy=self.source_policy,
+        )
+        return loop.run(query, max_sources=max_sources)
 
     def _collect_evidence(self, plan: ResearchPlan, max_sources: int) -> list[ResearchEvidence]:
         research_evidence: list[ResearchEvidence] = []

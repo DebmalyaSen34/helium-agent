@@ -126,6 +126,18 @@ class TestResearchPipeline(unittest.TestCase):
         self.assertIn("low", report.casefold())
         self.assertIn("no source evidence", report.casefold())
 
+    def test_research_query_public_api_uses_loop_report(self):
+        pipeline = ResearchPipeline(
+            search_pipeline=FakeSearchPipeline(),
+            planner=FakePlanner(),
+            synthesizer=ResearchSynthesizer(),
+        )
+
+        report = pipeline.run("compare India and China GDP in 2025")
+
+        self.assertIn("Research progress:", report)
+        self.assertIn("Stop reason:", report)
+
 
 if __name__ == "__main__":
     unittest.main()
