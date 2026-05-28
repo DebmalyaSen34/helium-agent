@@ -32,6 +32,9 @@ from utils.start_animation import render_startup_intro
 from utils.audio import play_status_sound
 from utils.health import run_startup_health_checks
 from utils.history import last_heard, record_command
+from prompt_toolkit import PromptSession, HTML
+from prompt_toolkit.history import FileHistory
+from utils.completer import WorkspaceFileCompleter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -328,9 +331,15 @@ def main(mode: str = "voice"):
         print_header("text")
         console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
         
+        prompt_session = PromptSession(
+            history=FileHistory(".helium_history"),
+            completer=WorkspaceFileCompleter(),
+            complete_while_typing=True
+        )
+        
         while True:
             try:
-                user_text = Prompt.ask("\n[bold green]You[/bold green]").strip()
+                user_text = prompt_session.prompt(HTML("\n<b><green>You</green></b> > ")).strip()
                 if not user_text:
                     continue
                 if user_text.lower() in {"quit", "exit", "stop"}:
@@ -353,15 +362,28 @@ def main(mode: str = "voice"):
                     print_chat_message("Error", exc.message, style="red")
                     continue
 
-                reply_generator = generate_response(
-                    llm_prompt,
-                    confirm_tool=confirm_tool,
-                    on_state=set_state,
-                    on_metrics=metrics.update,
-                    on_tool_result=collect_tool_result,
-                    print_metrics=False,
-                )
-                stream_reply(reply_generator)
+                with console.status("[cyan]Thinking...[/cyan]", spinner="dots") as status:
+                    def set_state_spinner(state: str):
+                        if "Using" in state or "Attachment" in state:
+                            status.update(f"[yellow]{state}...[/yellow]")
+                        elif "Responding" in state:
+                            status.update("[green]Responding...[/green]")
+                        elif "Thinking" in state:
+                            status.update("[cyan]Thinking...[/cyan]")
+                        else:
+                            status.update(f"[dim]:: {state}[/dim]")
+
+                    reply_generator = generate_response(
+                        llm_prompt,
+                        confirm_tool=confirm_tool,
+                        on_state=set_state_spinner,
+                        on_metrics=metrics.update,
+                        on_tool_result=collect_tool_result,
+                        print_metrics=False,
+                    )
+                    reply_list = list(reply_generator)
+                
+                stream_reply(reply_list)
                 print_sources(sources)
                 if metrics:
                     print_metrics(metrics)
