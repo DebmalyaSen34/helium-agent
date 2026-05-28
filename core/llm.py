@@ -3,6 +3,7 @@ import time
 import json
 import os
 
+from dataclasses import dataclass
 from datetime import datetime
 from collections.abc import Callable
 from typing import Any
@@ -17,6 +18,7 @@ from config.settings import (
 
 from utils.check_llm_api import hit_api
 from tools.registry import TOOL_PROMPT, execute_tool
+from utils.parser import extract_json
 
 load_dotenv()
 
@@ -25,6 +27,122 @@ console = Console()
 
 conversation_history = []
 MAX_HISTORY = 10
+MAX_AGENTIC_TURNS = 6
+
+
+@dataclass(frozen=True)
+class AgenticLoopResult:
+    final_answer: str
+    stop_reason: str
+    tools_used: list[str]
+    observations: list[str]
+
+
+class AgenticLoop:
+    def __init__(
+        self,
+        ask_model: Callable[[list[dict[str, str]]], str],
+        execute_tool_call: Callable[..., str | None],
+        max_turns: int = MAX_AGENTIC_TURNS,
+    ):
+        self.ask_model = ask_model
+        self.execute_tool_call = execute_tool_call
+        self.max_turns = max_turns
+
+    def run(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: list[dict[str, str]] | None = None,
+        confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
+    ) -> AgenticLoopResult:
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": self._initial_user_prompt(user_prompt)})
+
+        tools_used: list[str] = []
+        observations: list[str] = []
+
+        for _ in range(self.max_turns):
+            reply = clean_token(self.ask_model(messages).strip())
+            action_status, action = self._extract_action(reply)
+
+            if action_status == "none":
+                return AgenticLoopResult(
+                    final_answer=reply,
+                    stop_reason="final",
+                    tools_used=tools_used,
+                    observations=observations,
+                )
+
+            messages.append({"role": "assistant", "content": reply})
+
+            if action_status == "invalid" or action is None:
+                observation = (
+                    "Invalid tool action. Return exactly one valid JSON object inside "
+                    "<action> and </action> with 'tool' and 'args' keys."
+                )
+                observations.append(observation)
+                messages.append({"role": "user", "content": self._observation_prompt("tool action", observation)})
+                continue
+
+            tool_name = str(action.get("tool", "unknown"))
+            tools_used.append(tool_name)
+            tool_result = self.execute_tool_call(action, confirm_tool=confirm_tool)
+            observation = str(tool_result) if tool_result is not None else "Tool returned no result."
+            observations.append(observation)
+            messages.append({"role": "user", "content": self._observation_prompt(tool_name, observation)})
+
+        final_prompt = (
+            "You have reached the tool turn limit. Give the best concise answer you can "
+            "from the observations above. If the task is incomplete, say exactly what remains."
+        )
+        messages.append({"role": "user", "content": final_prompt})
+        final_answer = clean_token(self.ask_model(messages).strip())
+        return AgenticLoopResult(
+            final_answer=final_answer,
+            stop_reason="max_turns",
+            tools_used=tools_used,
+            observations=observations,
+        )
+
+    def _extract_action(self, reply: str) -> tuple[str, dict[str, Any] | None]:
+        looks_like_action = "<action" in reply or '"tool"' in reply or reply.strip().startswith("{")
+        if not looks_like_action:
+            return "none", None
+
+        action = extract_json(reply)
+        if not isinstance(action, dict) or "tool" not in action:
+            return "invalid", None
+
+        args = action.get("args", {})
+        if args is None:
+            action["args"] = {}
+        elif not isinstance(args, dict):
+            return "invalid", None
+
+        return "action", action
+
+    @staticmethod
+    def _initial_user_prompt(user_prompt: str) -> str:
+        return (
+            f"{user_prompt}\n\n"
+            "<agentic_loop>\n"
+            "Work in a simple loop: gather context, take one useful action, observe the result, "
+            "verify when the task touches code, then answer when done.\n"
+            "Use at most one tool per turn. If no tool is needed, answer directly.\n"
+            "For coding tasks, prefer reading relevant files first, making focused edits, "
+            "and running the smallest useful test or verification command after changes.\n"
+            "</agentic_loop>"
+        )
+
+    @staticmethod
+    def _observation_prompt(tool_name: str, observation: str) -> str:
+        return (
+            f"Observation from {tool_name}:\n{observation}\n\n"
+            "Continue the task. Call one more tool if needed, or give the final answer if complete."
+        )
 
 
 def clean_token(token: str) -> str:
@@ -94,7 +212,7 @@ def stream_openrouter_response(payload: dict):
             continue
 
 
-def build_messages(prompt: str) -> list[dict]:
+def build_system_prompt(prompt: str) -> str:
     from tools.memory_ops import get_relevant_memories
 
     now = datetime.now().strftime("%B %d, %Y")
@@ -109,6 +227,12 @@ def build_messages(prompt: str) -> list[dict]:
     if memories:
         memories_text = "\n".join(f"- {m}" for m in memories)
         system_content += f"\n\n=== RELEVANT SESSION MEMORIES ===\n{memories_text}\n================================"
+
+    return system_content
+
+
+def build_messages(prompt: str) -> list[dict]:
+    system_content = build_system_prompt(prompt)
 
     messages = [
         {
@@ -129,6 +253,46 @@ def build_messages(prompt: str) -> list[dict]:
     )
 
     return messages
+
+
+def call_llm_once(messages: list[dict[str, str]]) -> tuple[str, int]:
+    payload = {
+        "model": os.getenv("LLM_MODEL", API_MODEL),
+        "messages": messages,
+        "temperature": 0.3,
+        "stream": True,
+        "stream_options": {
+            "include_usage": True,
+        },
+        "stop": [
+            "<end_of_turn>",
+            "<start_of_turn>",
+            "User:",
+            "Current User:",
+        ],
+    }
+
+    full_reply = ""
+    token_count = 0
+
+    for item in stream_openrouter_response(payload):
+        if isinstance(item, dict) and "usage" in item:
+            token_count += item["usage"].get("completion_tokens", 0)
+            continue
+
+        full_reply += clean_token(item)
+
+    return clean_token(full_reply.strip()), token_count
+
+
+def execute_agent_tool(
+    action: dict[str, Any],
+    confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
+) -> str | None:
+    return execute_tool(
+        json.dumps(action),
+        confirm_tool=confirm_tool,
+    )
 
 
 def generate_response(
@@ -152,150 +316,53 @@ def generate_response(
     if on_state:
         on_state("Thinking")
 
-    messages = build_messages(prompt)
-
-    payload = {
-        "model": os.getenv("LLM_MODEL", API_MODEL),
-        "messages": messages,
-        "temperature": 0.3,
-        "stream": True,
-        "stream_options": {
-            "include_usage": True,
-        },
-        "stop": [
-            "<end_of_turn>",
-            "<start_of_turn>",
-            "User:",
-            "Current User:",
-            # "</start_of_turn>",
-            # "</end_of_turn>",
-        ],
-    }
-
     try:
+        system_prompt = build_system_prompt(prompt)
+        think_end = time.time()
 
-        full_reply = ""
-        current_sentence = ""
-        is_tool_call = False
+        def ask_model(loop_messages: list[dict[str, str]]) -> str:
+            nonlocal token_count
+            reply_text, tokens = call_llm_once(loop_messages)
+            token_count += tokens
+            return reply_text
 
-        follow_up_start = time.time()
-        follow_up_think_end = None
-
-        for item in stream_openrouter_response(payload):
-
-            if isinstance(item, dict) and "usage" in item:
-                token_count += item["usage"].get("completion_tokens", 0)
-                continue
-
-            if follow_up_think_end is None:
-                follow_up_think_end = time.time()
-
-            if think_end is None:
-                think_end = time.time()
-
-            token = clean_token(item)
-
-            full_reply += token
-            # current_sentence += token
-
-            # Detect tool call
-            stripped_reply = full_reply.strip()
-            if stripped_reply.startswith("{") or "<action>" in stripped_reply or '"tool":' in stripped_reply:
-                is_tool_call = True
-
-            # Stream sentence-by-sentence
-            # if (
-            #     not is_tool_call
-            #     and any(p in token for p in [".", "?", "!"])
-            # ):
-            #     yield clean_token(current_sentence.strip())
-            #     current_sentence = ""
-
-            if not is_tool_call:
-                yield token
-
-        if current_sentence.strip() and not is_tool_call:
-            yield clean_token(current_sentence.strip())
-
-        reply = full_reply.strip()
-
-        # ---------------------------------------------------
-        # TOOL EXECUTION
-        # ---------------------------------------------------
-
-        if is_tool_call:
-
+        def run_tool(
+            action: dict[str, Any],
+            confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
+        ) -> str | None:
+            nonlocal tool_execution_time
+            tool_name = str(action.get("tool", "unknown"))
             if on_state:
-                on_state("Using tool")
-
-            tool_name = "unknown"
-
-            try:
-                tool_data = json.loads(reply)
-
-                tool_name = tool_data.get("tool", "unknown")
-
-                tools_used.append(tool_name)
-
-            except json.JSONDecodeError:
-                pass
+                on_state(f"Using {tool_name}")
 
             tool_start_time = time.time()
-            tool_result = execute_tool(
-                reply,
-                confirm_tool=confirm_tool,
-            )
-            tool_execution_time = time.time() - tool_start_time
+            tool_result = execute_agent_tool(action, confirm_tool=confirm_tool)
+            tool_execution_time += time.time() - tool_start_time
 
-            if tool_result:
+            if on_tool_result and tool_result:
+                on_tool_result(tool_name, tool_result)
 
-                if on_tool_result:
-                    on_tool_result(tool_name, tool_result)
+            return tool_result
 
-                follow_up_messages = [
-                    {
-                        "role": "system",
-                        "content": ASSISTANT_PERSONA,
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"The user asked: '{prompt}'.\n\n"
-                            f"The previous tool returned:\n\n"
-                            f"{tool_result}\n\n"
-                            "Based on the tool result, answer directly.\n"
-                            "Do NOT summarize articles.\n"
-                            "Do NOT explain tools.\n"
-                            "Be concise and factual."
-                        ),
-                    },
-                ]
+        loop = AgenticLoop(
+            ask_model=ask_model,
+            execute_tool_call=run_tool,
+            max_turns=MAX_AGENTIC_TURNS,
+        )
+        loop_result = loop.run(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            history=conversation_history,
+            confirm_tool=confirm_tool,
+        )
+        reply = loop_result.final_answer
+        tools_used.extend(loop_result.tools_used)
 
-                follow_up_payload = {
-                    "model": os.getenv("LLM_MODEL", API_MODEL),
-                    "messages": follow_up_messages,
-                    "temperature": 0.3,
-                    "stream": True,
-                    "stream_options": {
-                        "include_usage": True,
-                    },
-                }
+        if on_state:
+            on_state("Responding")
 
-                final_reply = ""
-
-                for item in stream_openrouter_response(
-                    follow_up_payload
-                ):
-                    if isinstance(item, dict) and "usage" in item:
-                        token_count += item["usage"].get("completion_tokens", 0)
-                        continue
-
-                    token = clean_token(item)
-
-                    final_reply += token
-                    yield token
-
-                reply = clean_token(final_reply.strip())
+        if reply:
+            yield reply
 
         # ---------------------------------------------------
         # SAVE CONVERSATION HISTORY
@@ -336,9 +403,6 @@ def generate_response(
         #    if think_time
         #    else 1
         # )
-
-        if is_tool_call and follow_up_think_end:
-            think_time += (follow_up_think_end - follow_up_start)
 
         total_time = end_time - start_time
 

@@ -1,6 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
+from utils.check_llm_api import hit_api
 
 load_dotenv()
 
@@ -32,11 +33,16 @@ def check_llm_api():
         return False
 
     try:
-        response = requests.post(api_url, headers={"Authorization": f"Bearer {api_key}"}, json={
-            "model": llm_model,
-            "messages": [{"role": "user", "content": "Hi!"}],
-            "max_tokens": 1
-        })
+        response = hit_api(
+            {
+                "model": llm_model,
+                "messages": [{"role": "user", "content": "Hi!"}],
+                "max_tokens": 1,
+                "stream": False,
+            }
+        )
+        if response is None:
+            return False
         return response.status_code == 200
     except Exception as e:
         print(f"Error while checking LLM API: {e}")

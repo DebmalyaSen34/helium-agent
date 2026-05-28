@@ -11,6 +11,7 @@ GLITCH_REPEATS     = 4
 BOOT_LINE_DELAY    = 0.045
 FINAL_HOLD         = 0.6
 MIN_WIDTH          = 60
+CHECK_TIMEOUT      = 9
 
 CYAN    = "\033[96m"
 TCYAN   = "\033[36m"
@@ -191,6 +192,22 @@ def _logo_frames() -> list[list[str]]:
 
 from utils.system_check import check_internet_connectivity, check_llm_api, check_memory, check_tools, check_rag
 
+
+def _future_ok(
+    future: concurrent.futures.Future,
+    name: str,
+    *,
+    timeout: float = CHECK_TIMEOUT,
+) -> bool:
+    try:
+        return bool(future.result(timeout=timeout))
+    except concurrent.futures.TimeoutError:
+        print(f"{name} check timed out.")
+        return False
+    except Exception as exc:
+        print(f"{name} check failed: {exc}")
+        return False
+
 def _render_boot_lines(width: int, *, previous_height: int, boot_checks: list) -> None:
     """Type out boot check lines one by one, in place."""
     logo_block_height = len(LOGO_LINES) + 4
@@ -269,12 +286,12 @@ def render_startup_intro(*, animated: bool = True) -> None:
 
         boot_checks = [
             ("kernel interface", GREEN, "ok"),
-            ("tool registry", GREEN, "ok") if fut_tools.result() else ("tool registry", RED, "fail"),
-            ("memory subsystem", GREEN, "ok") if fut_memory.result() else ("memory subsystem", RED, "fail"),
-            ("inference engine", GREEN, "ok") if fut_llm.result() else ("inference engine", RED, "fail"),
+            ("tool registry", GREEN, "ok") if _future_ok(fut_tools, "tool registry") else ("tool registry", RED, "fail"),
+            ("memory subsystem", GREEN, "ok") if _future_ok(fut_memory, "memory subsystem") else ("memory subsystem", RED, "fail"),
+            ("inference engine", GREEN, "ok") if _future_ok(fut_llm, "inference engine") else ("inference engine", RED, "fail"),
             ("session context", GREEN, "ready"),
-            ("search access", GREEN, "ready") if fut_internet.result() else ("search access", RED, "offline"),
-            ("retrieval augmented generation", GREEN, "ok") if fut_rag.result() else ("retrieval augmented generation", RED, "fail"),
+            ("search access", GREEN, "ready") if _future_ok(fut_internet, "search access") else ("search access", RED, "offline"),
+            ("retrieval augmented generation", GREEN, "ok") if _future_ok(fut_rag, "retrieval augmented generation") else ("retrieval augmented generation", RED, "fail"),
         ]
 
         for _ in range(len(boot_checks) + 1):

@@ -31,3 +31,20 @@ def hit_api(payload: dict, is_stream: bool = True):
     except Exception as e:
         print(f"Error hitting API: {e}")
         return None
+
+if __name__ == "__main__":
+    payload = {
+        "model": "mimo-v2.5-pro",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello, how are you?"}
+        ],
+        "stream": False
+    }
+    response = hit_api(payload)
+    print(response)
+    if response:
+        print(response.json())
+        print("API is working!")
+    else:
+        print("API is not working.")
