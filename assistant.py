@@ -1,23 +1,10 @@
-import speech_recognition as sr
-from kokoro import KPipeline
-from openwakeword.model import Model
 from core.orchestrator import run_react_loop
 from engine.wake_word import wake_word_detection
 from engine.stt import speech_to_text
 from engine.tts import text_to_speech
 
 def main():
-    recognizer = sr.Recognizer()
-
-    print("[Initializing kokoro TTS...]")
-
-    pipeline = KPipeline(lang_code='a')
-    target_voice = "af_heart"
-
-    import openwakeword
-    openwakeword.utils.download_models()
-
-    print("[Loading Wake Word Engine...]")
+    print("[Initializing ...]")
     oww_model = Model(wakeword_models=["jarvis"], inference_framework="onnx")
     
     print("\n===============================")

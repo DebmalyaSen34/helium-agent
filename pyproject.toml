@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "helium-agent"
-version = "0.1.1"
+version = "0.1.3"
 description = "A terminal-focused AI agent with RAG and local tool capabilities"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,21 +15,11 @@ dependencies = [
     "prompt-toolkit",
     "python-dotenv",
     "pyyaml",
-    "duckduckgo-search",
+    "ddgs",
     "beautifulsoup4",
     "fastapi",
     "uvicorn[standard]",
     "playwright"
-]
-
-[project.optional-dependencies]
-voice = [
-    "speechrecognition>=3.10.0",
-    "kokoro>=0.9.0",
-    "sounddevice>=0.4.0",
-    "pyaudio>=0.2.11",
-    "openwakeword>=0.6.0",
-    "mlx-whisper>=0.1.0"
 ]
 
 [project.scripts]
@@ -37,4 +27,15 @@ helium = "main:cli_entrypoint"
 
 [tool.setuptools]
 py-modules = ["main"]
-packages = ["core", "tools", "config", "utils", "rag_service", "memory", "engine"]
+packages = [
+    "core",
+    "tools",
+    "tools.research",
+    "tools.rag",
+    "tools.search",
+    "config",
+    "utils",
+    "engine",
+    "rag_service",
+    "memory"
+]

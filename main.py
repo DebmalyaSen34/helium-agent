@@ -357,22 +357,35 @@ def main(mode: str = "text", target_path: str = "."):
 
     # Check for missing API credentials during startup
     api_key = os.getenv("LLM_API_KEY")
-    if not api_key:
+    api_url = os.getenv("LLM_API_URL")
+    api_model = os.getenv("LLM_MODEL")
+
+    needs_setup = False
+    if not api_key or not api_url or not api_model:
+        needs_setup = True
+    else:
+        from utils.system_check import check_llm_api
+        if not check_llm_api():
+            console.print("\n[yellow]Stored LLM configuration failed to connect. You may need to update your settings.[/yellow]")
+            needs_setup = True
+
+    if needs_setup:
         console.print(app_panel(
             "[bold cyan]Welcome to Helium Agent![/bold cyan]\n\n"
-            "I could not locate an [bold]LLM_API_KEY[/bold] in your environment.\n"
+            "Some required environment variables are missing or unable to connect.\n"
             "Let's configure your global system settings. These will be saved in\n"
             "[bold green]~/.helium.env[/bold green] and automatically work in any folder.",
             title="Setup Wizard",
             border_style="cyan"
         ))
         
-        entered_key = Prompt.ask("[bold green]1. Enter your LLM API Key (e.g. OpenRouter key)[/bold green]").strip()
+        entered_key = Prompt.ask("\n[bold green]1. Enter your LLM API Key (e.g. OpenRouter key)[/bold green]", default=api_key or "").strip()
         
         if entered_key:
-            entered_url = Prompt.ask("[bold green]2. Enter LLM API Base URL[/bold green]", default="https://openrouter.ai/api/v1").strip()
-            entered_model = Prompt.ask("[bold green]3. Enter default LLM Model[/bold green]", default="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").strip()
-            use_playwright = Prompt.ask("[bold green]4. Enable Playwright browser automation?[/bold green]", choices=["true", "false"], default="true").strip()
+            entered_url = Prompt.ask("[bold green]2. Enter LLM API Base URL (including /chat/completions if needed)[/bold green]", default=api_url or "https://openrouter.ai/api/v1/chat/completions").strip()
+            entered_model = Prompt.ask("[bold green]3. Enter default LLM Model[/bold green]", default=api_model or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").strip()
+            use_playwright_default = os.getenv("USE_PLAYWRIGHT", "true").lower()
+            use_playwright = Prompt.ask("[bold green]4. Enable Playwright browser automation?[/bold green]", choices=["true", "false"], default=use_playwright_default).strip()
             
             global_env = Path.home() / ".helium.env"
             try:

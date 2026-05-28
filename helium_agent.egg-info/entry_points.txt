@@ -1,2 +1,0 @@
-[console_scripts]
-helium = main:cli_entrypoint
