@@ -2,88 +2,57 @@
 
 # Helium Agent
 
-> **Important:** Voice support is still under development so kindly use TEXT mode.
+Helium is a lightweight local AI agent that does everything your everyday agent does but without the massive bill and with your own customization. You can run any LLM be it local or cloud inside Helium. But to have the total experience of freedom I would suggest to integrate a local LLM either using ollama, llama.cpp or any inference technology of your choice.
 
-Helium is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, RAG support and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
+Helium is still developing and more features are added as you read this. I would really love for you to contribute to this and make a part of Helium your own.
 
-> If you directly want to try go to [Docker](#docker) Section
+> [!TIP]
+> If you directly want to try go to [usage](#usage) section.
 
 ## What It Can Do
 
 - **Answer everyday questions:** Just like any other agent it can repsond to any mundane queries you might have. It won't judge you.
 - **Tool calling:** Helium can calls tools it has to perform complex operations in order to respond to your queries.
-- **Research:** For queries that include an `in-depth` knowledge and information retrieval Helium will take help of its research tool to provide with most accurate repsonse with proper citations.
+- **Coding**: It can perform long coding tasks with the help of `agentic loop` build inside it.
+- **Deep Research:** For queries that include an `in-depth` knowledge and information retrieval Helium will take help of its research tool to provide with most accurate repsonse with proper citations.
 - **Web Search:** It can use `DuckDuckGoSearch` API to get web results and if necessary it will use `playwright` to dig deeper into complex websites all to make sure you get the best answer.
 - **RAG:** Currently a simple RAG pipeline is integrated where only 1 file at a time can be given to Helium and it will respond accordingly. [Future plans to scale this]
 - **Bash execution:** Helium can perform `safe` bash operations in its terminal.
 - **Long-term memory:** It uses a `in-memory sqlite` database which is currently session-scoped to remember important facts.
 
-## Project Structure
-
-```text
-Helium/
-├── main.py                 # Voice assistant entry point
-├── assistant.py            # Assistant-facing orchestration helpers
-├── requirements.txt        # Python dependencies
-├── requirements-rag.txt    # Heavy RAG dependencies
-├── docker-compose.yml      # Terminal + RAG containers
-├── Dockerfile.api          # FastAPI backend image
-├── Dockerfile.frontend     # React frontend image
-├── Dockerfile.terminal     # Terminal UI image
-├── api/
-│   └── main.py             # FastAPI WebSocket chat API
-├── config/
-│   ├── settings.py         # Typed defaults and settings loader
-│   └── settings.toml       # Local service, wake, speech, and assistant settings
-├── core/
-│   ├── llm.py              # LLM response generation and tool loop
-│   └── orchestrator.py     # Assistant orchestration layer
-├── engine/
-│   ├── stt.py              # Speech-to-text handling
-│   ├── tts.py              # Text-to-speech handling
-│   └── wake_word.py        # Wake-word detection
-├── frontend/
-│   ├── src/                # React chat interface
-│   ├── nginx/              # Static app server config
-│   └── package.json        # Vite scripts and frontend dependencies
-├── memory/
-│   └── graph.py            # Local memory graph support
-├── rag_service/            # standalone document intelligence FastAPI service
-├── tools/
-│   ├── registry.py         # Tool definitions and prompt context
-│   ├── file_ops.py         # File creation tool
-│   ├── memory_ops.py       # Memory tools
-│   ├── system_ops.py       # System tools
-│   ├── web_search.py       # Web-search tool entry point
-│   ├── search/             # Search providers, planning, ranking, fetching, extraction
-│   └── research/           # Research planner, models, pipeline, execution
-├── utils/
-│   ├── audio.py            # macOS sound cues
-│   ├── health.py           # Service health checks
-│   ├── history.py          # Command/conversation history helpers
-│   └── parser.py           # Robust JSON/tool-call parsing
-├── tests/                  # Unit tests for parser, tools, search, memory, and wake word logic
-└── .env.example            # Example env file
-```
-
 ## Prerequisites
 
-Helium is optimized for **macOS on Apple Silicon** because the voice pipeline uses `mlx-whisper` and macOS audio cues. Some server-only pieces can run in containers, but microphone capture and local audio playback are best run directly on macOS.
+Helium is optimized for **macOS on Apple Silicon** but I have tested it across platforms so you shouldn't face any problems but if you do please raise `issue`.
 
 You will need:
 
 - Python 3.11+
-- A working microphone with terminal/app permission [Not needed currently]
-- PortAudio dependencies for `pyaudio` and `sounddevice` [Not needed currently]
 - A local LLM service, usually `llama.cpp`
 - If you have an API endpoint to any LLM you can use that too.
-- Optional local SearxNG for local-first web search [No longer needed]
-- Node/Bun only if you are developing the frontend outside Docker
 
 Default service URLs are configured in [`config/settings.py`](config/settings.py) and can be overridden in [`config/settings.toml`](config/settings.toml).
 
+## Usage
+
+Helium is packaged to `pypi` so you can just download it and use it directly.
+
+Just install it using `pip`:
+
+```Bash
+pip install helium-agent
+```
+
+Now, go to the directory where you want Helium to work and just call it:
+
+```bash
+helium .
+```
+
+For more commands type `/help` in the chat.
+
 ## Docker
 
+> [!NOTE]
 > Use this if you just want to chat without worrying the technical complexities but make sure to have you `env` configured accordingly.
 >
 > It will take care of RAG pipeline automatically.
@@ -106,7 +75,8 @@ The API container is configured to reach host services through `host.docker.inte
 
 ## Dev Installation
 
-> ## IMPORTANT: Use this only if you want to run it manually otherwise go to [Docker](#docker) section.
+> [!NOTE]
+> Use this only if you want to run it manually otherwise go to [Docker](#docker) section.
 
 1. Clone the repository:
 
@@ -135,11 +105,10 @@ The API container is configured to reach host services through `host.docker.inte
    python -m rag_service doctor
    ```
 
-If audio dependencies fail to build, install PortAudio first, then rerun the Python dependency install.
-
 ## Local Services
 
-> Note: You can either use llama.cpp or any LLM provider API.
+> [!NOTE]
+> You can either use llama.cpp or any LLM provider API.
 
 ### Start llama.cpp
 
@@ -179,7 +148,8 @@ playright install chromium
 
 > These are not added in `requirements.txt` because Helium aims to be lightweight. But you can do whatever you want!
 
-> Note: Playwright is heavy as it downloads chromium so it can take some of your memory. Use with caution.
+> [!TIP]
+> Playwright is heavy as it downloads chromium so it can take some of your memory. Use with caution.
 
 ### Start RAG pipeline
 
@@ -191,7 +161,7 @@ This is an **optional** feature. Look into `rag_service` directory for more deta
 
 ## Run The Assistant
 
-> Note: Only TEXT mode is ready for use.
+> Only TEXT mode is ready for use.
 
 1. Confirm the LLM service is running.
 2. Confirm your web services are running if you want better results.
@@ -226,46 +196,6 @@ RAG request example:
 @docs/plan.pdf summarize the risks
 ```
 
-## Run The Web UI
-
-The web UI has two parts:
-
-- FastAPI backend: WebSocket endpoint at `ws://localhost:8080/ws/chat`
-- React/Vite frontend: browser chat interface under [`frontend/`](frontend/)
-
-### Backend
-
-```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8080
-```
-
-### Frontend
-
-```bash
-cd frontend
-bun install
-bun run dev
-```
-
-The frontend opens a WebSocket to port `8080`, so keep the API running while using the browser UI.
-
-## Configuration
-
-Most runtime behavior lives in [`config/settings.toml`](config/settings.toml):
-
-- `services.llama_cpp_url`
-- `wake_word.threshold`
-- `wake_word.push_to_talk`
-- `speech.whisper_model`
-- `speech.timeout_seconds`
-- `speech.follow_up_timeout_seconds`
-- `assistant.tts_voice`
-- `assistant.follow_up_mode`
-- `assistant.confirm_risky_tools`
-- `assistant.persona`
-
-When a key is missing, Helium falls back to defaults in [`config/settings.py`](config/settings.py).
-
 ## Testing
 
 Run the test suite from the repository root:
@@ -274,20 +204,4 @@ Run the test suite from the repository root:
 python -m unittest discover -s tests
 ```
 
-For the frontend:
 
-```bash
-cd frontend
-bun run lint
-bun run build
-```
-
-## Troubleshooting
-
-- **No wake detection:** Check microphone permissions, input device selection, and `wake_word.threshold`.
-- **False wakes:** Increase `wake_word.threshold` or `wake_word.required_hits`.
-- **No transcription:** Confirm `mlx-whisper`, microphone access, and PortAudio dependencies are working.
-- **No LLM response:** Confirm the llama.cpp completion endpoint matches `services.llama_cpp_url`.
-- **Search is weak or failing:** Start SearxNG or verify `services.searxng_url`; DDGS fallback may be less consistent.
-- **Web UI cannot connect:** Make sure the FastAPI backend is running on port `8080`.
-- **Tool call JSON errors:** Check terminal logs. [`utils/parser.py`](utils/parser.py) includes recovery logic, but malformed model output can still skip a tool step.
