@@ -38,6 +38,7 @@ from rich.text import Text
 
 from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS
 from core.llm import generate_response
+from core.coding_workflow import run_coding_workflow
 try:
     from engine.stt import build_speech_config, speech_to_text
     from engine.tts import text_to_speech
@@ -305,6 +306,49 @@ def capture_command(
 
     return None
 
+def parse_code_command(user_text: str) -> str | None:
+    stripped = user_text.strip()
+    if stripped == "/code":
+        return ""
+    if not stripped.startswith("/code "):
+        return None
+    return stripped[len("/code "):].strip()
+
+def format_code_workflow_report(result) -> str:
+    answer = str(getattr(result, "final_answer", "")).strip()
+    sections = [answer] if answer else []
+
+    if "Changed files:" not in answer:
+        changed_files = getattr(result, "changed_files", []) or []
+        files_text = "\n".join(f"- {path}" for path in changed_files) if changed_files else "- None recorded"
+        sections.append(f"Changed files:\n{files_text}")
+
+    if "Verification:" not in answer:
+        verification_commands = getattr(result, "verification_commands", []) or []
+        verification_text = (
+            "\n".join(f"- {command}" for command in verification_commands)
+            if verification_commands
+            else "- Not run or not recorded"
+        )
+        sections.append(f"Verification:\n{verification_text}")
+
+    if "Remaining risks:" not in answer:
+        sections.append("Remaining risks:\n- Not reported")
+
+    return "\n\n".join(sections)
+
+def handle_code_command(user_text: str, confirm_tool) -> bool:
+    task = parse_code_command(user_text)
+    if task is None:
+        return False
+    if not task:
+        print_chat_message("Helium", "Usage: /code <coding task>", style="cyan")
+        return True
+
+    set_state("Coding Workflow")
+    result = run_coding_workflow(task, confirm_tool=confirm_tool)
+    print_chat_message("Helium", format_code_workflow_report(result), style="cyan", markdown=True)
+    return True
 
 def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
     normalized = user_text.strip().lower()
@@ -444,6 +488,8 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
 
                 reset_state()
                 record_command(user_text)
+                if handle_code_command(user_text, confirm_tool=confirm_tool):
+                    continue
                 metrics: dict[str, Any] = {}
                 sources: list[dict[str, str]] = []
 
