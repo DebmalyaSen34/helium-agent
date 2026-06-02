@@ -31,6 +31,36 @@ class CodeCommandTests(unittest.TestCase):
 
         self.assertIsNone(parsed)
 
+
+class DeepResearchCommandTests(unittest.TestCase):
+    def test_parse_deep_research_command_extracts_task(self):
+        parsed = main.parse_deep_research_command(
+            "/deep-research compare local-first agents and cloud agents"
+        )
+
+        self.assertEqual(parsed, "compare local-first agents and cloud agents")
+
+    def test_parse_deep_research_command_trims_whitespace(self):
+        parsed = main.parse_deep_research_command("  /deep-research   explain AI regulations   ")
+
+        self.assertEqual(parsed, "explain AI regulations")
+
+    def test_parse_deep_research_command_returns_empty_string_for_empty_task(self):
+        parsed = main.parse_deep_research_command("/deep-research   ")
+
+        self.assertEqual(parsed, "")
+
+    def test_parse_deep_research_command_ignores_normal_chat(self):
+        parsed = main.parse_deep_research_command("research this normally")
+
+        self.assertIsNone(parsed)
+
+    def test_parse_deep_research_command_does_not_match_prefix_words(self):
+        parsed = main.parse_deep_research_command("/deep-researcher explain tools")
+
+        self.assertIsNone(parsed)
+
+
 class CodeCommandHandlerTests(unittest.TestCase):
     @patch("main.print_chat_message")
     def test_handle_code_command_shows_usage_for_empty_task(self, mock_print):
@@ -95,6 +125,44 @@ class CodeCommandHandlerTests(unittest.TestCase):
         self.assertIn("Verification:", rendered)
         self.assertIn("python -m unittest tests.test_example -v", rendered)
         self.assertIn("Remaining risks:", rendered)
+
+
+class DeepResearchCommandHandlerTests(unittest.TestCase):
+    @patch("main.print_chat_message")
+    def test_handle_deep_research_command_shows_usage_for_empty_task(self, mock_print):
+        handled = main.handle_deep_research_command("/deep-research")
+
+        self.assertTrue(handled)
+        mock_print.assert_called_once()
+        self.assertIn("Usage: /deep-research <research task>", mock_print.call_args.args[1])
+
+    @patch("main.research_query", return_value="Deep cited answer")
+    @patch("main.print_chat_message")
+    @patch("main.set_state")
+    def test_handle_deep_research_command_runs_research_pipeline(
+        self,
+        mock_set_state,
+        mock_print,
+        mock_research_query,
+    ):
+        handled = main.handle_deep_research_command(
+            "/deep-research compare local agents with cloud agents"
+        )
+
+        self.assertTrue(handled)
+        mock_set_state.assert_called_with("Deep Research")
+        mock_research_query.assert_called_once_with(
+            "compare local agents with cloud agents",
+            max_sources=8,
+        )
+        mock_print.assert_called_with("Helium", "Deep cited answer", style="cyan", markdown=True)
+
+    @patch("main.research_query")
+    def test_handle_deep_research_command_ignores_normal_chat(self, mock_research_query):
+        handled = main.handle_deep_research_command("hello")
+
+        self.assertFalse(handled)
+        mock_research_query.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

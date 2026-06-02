@@ -1,9 +1,20 @@
 import os
 from prompt_toolkit.completion import Completer, Completion
 
+SLASH_COMMANDS = (
+    "/code",
+    "/deep-research",
+)
+
 class WorkspaceFileCompleter(Completer):
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
+
+        if text.startswith("/") and " " not in text:
+            for command in SLASH_COMMANDS:
+                if command.startswith(text):
+                    yield Completion(command, start_position=-len(text))
+            return
         
         # Trigger autocomplete when typing after the '@' mention symbol
         if "@" in text:

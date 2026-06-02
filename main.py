@@ -39,6 +39,7 @@ from rich.text import Text
 from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS
 from core.llm import generate_response
 from core.coding_workflow import run_coding_workflow
+from tools.research.pipeline import research_query
 try:
     from engine.stt import build_speech_config, speech_to_text
     from engine.tts import text_to_speech
@@ -314,6 +315,14 @@ def parse_code_command(user_text: str) -> str | None:
         return None
     return stripped[len("/code "):].strip()
 
+def parse_deep_research_command(user_text: str) -> str | None:
+    stripped = user_text.strip()
+    if stripped == "/deep-research":
+        return ""
+    if not stripped.startswith("/deep-research "):
+        return None
+    return stripped[len("/deep-research "):].strip()
+
 def format_code_workflow_report(result) -> str:
     answer = str(getattr(result, "final_answer", "")).strip()
     sections = [answer] if answer else []
@@ -348,6 +357,19 @@ def handle_code_command(user_text: str, confirm_tool) -> bool:
     set_state("Coding Workflow")
     result = run_coding_workflow(task, confirm_tool=confirm_tool)
     print_chat_message("Helium", format_code_workflow_report(result), style="cyan", markdown=True)
+    return True
+
+def handle_deep_research_command(user_text: str) -> bool:
+    task = parse_deep_research_command(user_text)
+    if task is None:
+        return False
+    if not task:
+        print_chat_message("Helium", "Usage: /deep-research <research task>", style="cyan")
+        return True
+
+    set_state("Deep Research")
+    result = research_query(task, max_sources=8)
+    print_chat_message("Helium", result, style="cyan", markdown=True)
     return True
 
 def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
@@ -489,6 +511,8 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
                 reset_state()
                 record_command(user_text)
                 if handle_code_command(user_text, confirm_tool=confirm_tool):
+                    continue
+                if handle_deep_research_command(user_text):
                     continue
                 metrics: dict[str, Any] = {}
                 sources: list[dict[str, str]] = []
