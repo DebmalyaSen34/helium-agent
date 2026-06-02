@@ -1,35 +1,24 @@
-import os
 import requests
-from dotenv import load_dotenv
+from config.runtime_config import LlmRuntimeConfig, load_llm_runtime_config
 from utils.check_llm_api import hit_api
 
-load_dotenv()
 
+def check_llm_api(config: LlmRuntimeConfig | None = None):
+    runtime_config = config or load_llm_runtime_config()
 
-def check_llm_api():
-
-    api_key = os.getenv("LLM_API_KEY", None)
-    if api_key:
-        api_key = api_key.strip()
-
+    api_key = runtime_config.api_key.strip() if runtime_config.api_key else None
     if not api_key:
-        print("LLM_API_KEY is not set in environment variables.")
+        print("LLM_API_KEY is not set in runtime configuration.")
         return False
 
-    api_url = os.getenv("LLM_API_URL", None)
-    if api_url:
-        api_url = api_url.strip()
-
+    api_url = runtime_config.api_url.strip() if runtime_config.api_url else None
     if not api_url:
-        print("LLM_API_URL is not set in environment variables."    )
+        print("LLM_API_URL is not set in runtime configuration.")
         return False
 
-    llm_model = os.getenv("LLM_MODEL", None)
-    if llm_model:
-        llm_model = llm_model.strip()
-
+    llm_model = runtime_config.model.strip() if runtime_config.model else None
     if not llm_model:
-        print("LLM_MODEL is not set in environment variables.")
+        print("LLM_MODEL is not set in runtime configuration.")
         return False
 
     try:
@@ -39,7 +28,10 @@ def check_llm_api():
                 "messages": [{"role": "user", "content": "Hi!"}],
                 "max_tokens": 1,
                 "stream": False,
-            }
+            },
+            is_stream=False,
+            api_url=api_url,
+            api_key=api_key,
         )
         if response is None:
             return False

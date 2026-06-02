@@ -25,12 +25,15 @@ Get your llm endpoints, url and model.
 5. On the left panel click on `API keys`
 6. Create an API key and copy the `key and url`
 7. Find a free model in openrouter. Eg. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`
-8. Paste in a file `.env` in the `helium-agent` directory these fields:
-        
+Run `helium` once and follow the setup wizard. The wizard stores your API key in the OS credential manager and stores non-secret defaults in the user Helium config file.
 
-        LLM_API_KEY=key
-        LLM_API_URL=url
-        LLM_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+For temporary shell-only setup, export:
+
+```bash
+export LLM_API_KEY=key
+export LLM_API_URL=url
+export LLM_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+```
 
 
 ## Running it

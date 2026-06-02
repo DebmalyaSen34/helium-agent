@@ -126,14 +126,23 @@ http://127.0.0.1:3000/v1/chat/completion
 
 ### Use LLM API
 
-If you have an API to any LLM provider then you can use them directly by adding the `API Key` to a `.env` file in the directory.
+Run `helium` and follow the setup wizard. Persistent API keys are stored in your operating system credential manager:
+
+- macOS: Keychain
+- Windows: Credential Manager
+- Linux: Secret Service or KWallet, depending on your desktop environment
+
+Non-secret defaults such as the API URL, model, and Playwright toggle are stored in your user Helium config directory.
+
+You can still use environment variables for CI, Docker, or temporary overrides:
 
 ```text
-LLM_API_KEY=your-llm-url-llm-api-key
+LLM_API_KEY=your-llm-api-key
 LLM_API_URL=your-llm-url
+LLM_MODEL=your-model
 ```
 
-Look at `.env.example` for more detail.
+If you previously used `~/.helium.env`, Helium can import it into secure storage during setup. The legacy file is left untouched, so remove it yourself after confirming the import worked.
 
 ### Start Playwright
 

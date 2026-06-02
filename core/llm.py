@@ -1,15 +1,14 @@
 import logging
 import time
 import json
-import os
 
 from dataclasses import dataclass
 from datetime import datetime
 from collections.abc import Callable
 from typing import Any
 
-from dotenv import load_dotenv
 from rich.console import Console
+from config.runtime_config import load_llm_runtime_config
 
 from config.settings import (
     ASSISTANT_PERSONA,
@@ -19,8 +18,6 @@ from config.settings import (
 from utils.check_llm_api import hit_api
 from tools.registry import TOOL_PROMPT, execute_tool
 from utils.parser import extract_json
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -165,9 +162,9 @@ def clean_token(token: str) -> str:
     return token
 
 
-def stream_openrouter_response(payload: dict):
+def stream_openrouter_response(payload: dict, *, api_url: str | None = None, api_key: str | None = None):
 
-    response = hit_api(payload=payload, is_stream=True)
+    response = hit_api(payload=payload, is_stream=True, api_url=api_url, api_key=api_key)
 
     if response is None:
         raise Exception("Failed to get response from OpenRouter API.")
@@ -256,8 +253,9 @@ def build_messages(prompt: str) -> list[dict]:
 
 
 def call_llm_once(messages: list[dict[str, str]]) -> tuple[str, int]:
+    runtime_config = load_llm_runtime_config()
     payload = {
-        "model": os.getenv("LLM_MODEL", API_MODEL),
+        "model": runtime_config.model or API_MODEL,
         "messages": messages,
         "temperature": 0.3,
         "stream": True,
@@ -275,7 +273,11 @@ def call_llm_once(messages: list[dict[str, str]]) -> tuple[str, int]:
     full_reply = ""
     token_count = 0
 
-    for item in stream_openrouter_response(payload):
+    for item in stream_openrouter_response(
+        payload,
+        api_url=runtime_config.api_url,
+        api_key=runtime_config.api_key,
+    ):
         if isinstance(item, dict) and "usage" in item:
             token_count += item["usage"].get("completion_tokens", 0)
             continue

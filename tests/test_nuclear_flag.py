@@ -25,6 +25,7 @@ class NuclearFlagTests(unittest.TestCase):
         
         # We also mock internal methods in main() to avoid running the full main loop during tests
         with patch("utils.system_check.check_llm_api", return_value=True), \
+             patch("main.ensure_llm_runtime_config"), \
              patch("main.print_header"), \
              patch("main.PromptSession") as mock_session:
             

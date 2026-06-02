@@ -19,7 +19,9 @@ dependencies = [
     "beautifulsoup4",
     "fastapi",
     "uvicorn[standard]",
-    "playwright"
+    "playwright",
+    "keyring",
+    "platformdirs"
 ]
 
 [project.scripts]

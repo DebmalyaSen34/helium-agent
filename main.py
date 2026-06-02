@@ -40,6 +40,14 @@ from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTI
 from core.llm import generate_response
 from core.coding_workflow import run_coding_workflow
 from tools.research.pipeline import research_query
+from config.runtime_config import (
+    RuntimeConfigError,
+    import_legacy_runtime_config,
+    load_llm_runtime_config,
+    parse_legacy_env_file,
+    save_llm_runtime_config,
+)
+from utils.system_check import check_llm_api
 try:
     from engine.stt import build_speech_config, speech_to_text
     from engine.tts import text_to_speech
@@ -496,6 +504,80 @@ def prepare_rag_prompt(user_text: str) -> str:
     return str(evidence["prompt"])
 
 
+def ensure_llm_runtime_config() -> bool:
+    runtime_config = load_llm_runtime_config()
+    needs_setup = not runtime_config.is_complete
+    if not needs_setup and not check_llm_api(runtime_config):
+        console.print("\n[yellow]Stored LLM configuration failed to connect. You may need to update your settings.[/yellow]")
+        needs_setup = True
+
+    if not needs_setup:
+        return True
+
+    legacy_values = parse_legacy_env_file()
+    if legacy_values and not runtime_config.is_complete:
+        import_choice = Prompt.ask(
+            "[bold green]Import existing ~/.helium.env into secure storage?[/bold green]",
+            choices=["yes", "no"],
+            default="yes",
+        )
+        if import_choice == "yes":
+            try:
+                imported = import_legacy_runtime_config()
+                console.print(
+                    "[yellow]Imported legacy settings. ~/.helium.env may still contain secrets and was left untouched.[/yellow]"
+                )
+                if imported.is_complete and check_llm_api(imported):
+                    return True
+            except RuntimeConfigError as exc:
+                console.print(f"[bold red]{exc}[/bold red]")
+
+    console.print(app_panel(
+        "[bold cyan]Welcome to Helium Agent![/bold cyan]\n\n"
+        "Some required LLM settings are missing or unable to connect.\n"
+        "Persistent API keys are saved to your system credential manager.\n"
+        "Non-secret defaults are saved to your user Helium config file.",
+        title="Setup Wizard",
+        border_style="cyan",
+    ))
+
+    entered_key = Prompt.ask(
+        "\n[bold green]1. Enter your LLM API Key (e.g. OpenRouter key)[/bold green]",
+        default=runtime_config.api_key or "",
+    ).strip()
+    if not entered_key:
+        console.print("[yellow]Key setup skipped. Agent starting with active environment values.[/yellow]\n")
+        return False
+
+    entered_url = Prompt.ask(
+        "[bold green]2. Enter LLM API Base URL (including /chat/completions if needed)[/bold green]",
+        default=runtime_config.api_url or "https://openrouter.ai/api/v1/chat/completions",
+    ).strip()
+    entered_model = Prompt.ask(
+        "[bold green]3. Enter default LLM Model[/bold green]",
+        default=runtime_config.model or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    ).strip()
+    use_playwright_default = "true" if runtime_config.use_playwright is not False else "false"
+    use_playwright = Prompt.ask(
+        "[bold green]4. Enable Playwright browser automation?[/bold green]",
+        choices=["true", "false"],
+        default=use_playwright_default,
+    ).strip()
+
+    try:
+        save_llm_runtime_config(
+            api_key=entered_key,
+            api_url=entered_url,
+            model=entered_model,
+            use_playwright=use_playwright == "true",
+        )
+        console.print("\n[green]LLM API key saved to the system credential manager.[/green]\n")
+        return True
+    except RuntimeConfigError as exc:
+        console.print(f"[bold red]{exc}[/bold red]\n")
+        return False
+
+
 def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
     workspace = Path(target_path).resolve()
     os.chdir(workspace)
@@ -506,54 +588,7 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
         warning_body = Text("Nuclear mode active. The agent will execute all risky tools without confirmation.", style="bold red")
         console.print(app_panel(warning_body, title="WARNING", border_style="red"))
 
-    # Check for missing API credentials during startup
-    api_key = os.getenv("LLM_API_KEY")
-    api_url = os.getenv("LLM_API_URL")
-    api_model = os.getenv("LLM_MODEL")
-
-    needs_setup = False
-    if not api_key or not api_url or not api_model:
-        needs_setup = True
-    else:
-        from utils.system_check import check_llm_api
-        if not check_llm_api():
-            console.print("\n[yellow]Stored LLM configuration failed to connect. You may need to update your settings.[/yellow]")
-            needs_setup = True
-
-    if needs_setup:
-        console.print(app_panel(
-            "[bold cyan]Welcome to Helium Agent![/bold cyan]\n\n"
-            "Some required environment variables are missing or unable to connect.\n"
-            "Let's configure your global system settings. These will be saved in\n"
-            "[bold green]~/.helium.env[/bold green] and automatically work in any folder.",
-            title="Setup Wizard",
-            border_style="cyan"
-        ))
-        
-        entered_key = Prompt.ask("\n[bold green]1. Enter your LLM API Key (e.g. OpenRouter key)[/bold green]", default=api_key or "").strip()
-        
-        if entered_key:
-            entered_url = Prompt.ask("[bold green]2. Enter LLM API Base URL (including /chat/completions if needed)[/bold green]", default=api_url or "https://openrouter.ai/api/v1/chat/completions").strip()
-            entered_model = Prompt.ask("[bold green]3. Enter default LLM Model[/bold green]", default=api_model or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").strip()
-            use_playwright_default = os.getenv("USE_PLAYWRIGHT", "true").lower()
-            use_playwright = Prompt.ask("[bold green]4. Enable Playwright browser automation?[/bold green]", choices=["true", "false"], default=use_playwright_default).strip()
-            
-            global_env = Path.home() / ".helium.env"
-            try:
-                with open(global_env, "w") as f:
-                    f.write(f"LLM_API_KEY={entered_key}\n")
-                    f.write(f"LLM_API_URL={entered_url}\n")
-                    f.write(f"LLM_MODEL={entered_model}\n")
-                    f.write(f"USE_PLAYWRIGHT={use_playwright}\n")
-                
-                # Load newly created environment variables immediately into memory
-                from dotenv import load_dotenv
-                load_dotenv(global_env)
-                console.print(f"\n[green]Global configuration successfully saved to {global_env}![/green]\n")
-            except Exception as e:
-                console.print(f"[red]Error saving global config: {e}[/red]\n")
-        else:
-            console.print("[yellow]Key setup skipped. Agent starting with active environment values.[/yellow]\n")
+    ensure_llm_runtime_config()
 
     from tools.memory_ops import initialize_session
     initialize_session()

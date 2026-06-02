@@ -6,11 +6,8 @@ from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
 
-# 1. Project level overrides first
+# Project-level .env remains an explicit override path for local development.
 load_dotenv(Path.cwd() / ".env")
-
-# 2. Fallback to global user settings
-load_dotenv(Path.home() / ".helium.env")
 
 try:
     import tomllib
@@ -195,16 +192,23 @@ def _env_bool(name: str) -> bool | None:
 def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     merged = settings.copy()
 
+    try:
+        from config.runtime_config import load_llm_runtime_config
+        runtime_config = load_llm_runtime_config()
+    except Exception:
+        runtime_config = None
+
     value_overrides = {
         ("services", "llama_cpp_url"): os.getenv("HELIUM_LLAMA_CPP_URL"),
-        ("services", "api_model"): os.getenv("LLM_MODEL") or os.getenv("HELIUM_API_MODEL"),
+        ("services", "api_model"): os.getenv("LLM_MODEL") or os.getenv("HELIUM_API_MODEL") or (runtime_config.model if runtime_config else None),
         ("rag_service", "service_url"): os.getenv("HELIUM_RAG_SERVICE_URL"),
         ("rag_service", "host"): os.getenv("HELIUM_RAG_HOST"),
         ("rag_service", "port"): os.getenv("HELIUM_RAG_PORT"),
     }
 
+    runtime_playwright = runtime_config.use_playwright if runtime_config else None
     bool_overrides = {
-        ("browser", "use_playwright"): _env_bool("USE_PLAYWRIGHT"),
+        ("browser", "use_playwright"): _env_bool("USE_PLAYWRIGHT") if _env_bool("USE_PLAYWRIGHT") is not None else runtime_playwright,
         ("browser", "headless"): _env_bool("PLAYWRIGHT_HEADLESS"),
     }
 
