@@ -323,6 +323,69 @@ def parse_deep_research_command(user_text: str) -> str | None:
         return None
     return stripped[len("/deep-research "):].strip()
 
+def parse_help_command(user_text: str) -> bool:
+    return user_text.strip() == "/help"
+
+def build_help_text() -> str:
+    return """# Helium Help
+
+Helium is a local AI assistant for everyday questions, deep research, file-aware chat, and agentic coding.
+
+## Commands
+
+- `/help` - Show this help guide.
+- `/code <task>` - Agentic coding workflow: inspect files, plan, edit, verify, and report changes.
+- `/deep-research <task>` - Run the deep research pipeline directly with multi-source evidence.
+- `@path/to/file <question>` - Attach one local file for RAG-backed answers.
+- `quit`, `exit`, or `stop` - End the current text session.
+
+## What You Can Ask
+
+- Everyday chat: ask questions, draft text, summarize ideas, or reason through decisions.
+- Deep research: request cited reports, comparisons, market/policy analysis, or current-event research.
+- Agentic coding: fix bugs, add tests, inspect project architecture, refactor focused code, and run verification.
+- File work: read, create, patch, search, and summarize project files through tools.
+- Web work: search the web, fetch pages, and synthesize evidence with source URLs.
+- Memory: ask Helium to remember preferences or facts for the current session.
+
+## Agentic Coding
+
+Use `/code` when you want Helium to work like a coding agent:
+
+```text
+/code fix the failing parser test and run the focused test file
+```
+
+Helium will inspect relevant files first, make targeted edits, ask before risky shell commands, run verification when useful, and finish with:
+
+- Changed files
+- Verification
+- Remaining risks
+
+## Deep Research
+
+Use `/deep-research` when you want the research pipeline explicitly:
+
+```text
+/deep-research compare local-first AI agents with cloud coding agents and include sources
+```
+
+Helium will plan searches, collect evidence, synthesize findings, and cite sources.
+
+## Tool safety
+
+Read/search tools can run automatically. Risky actions such as destructive file operations, unsafe shell commands, and opening apps may ask for confirmation. In `/code`, common file edits are auto-approved so coding tasks can move smoothly, while destructive actions still stay guarded.
+
+## Examples
+
+```text
+Summarize this project.
+@README.md explain how to run Helium locally
+/deep-research why are local AI agents becoming popular?
+/code add a focused test for /help command parsing
+```
+"""
+
 def format_code_workflow_report(result) -> str:
     answer = str(getattr(result, "final_answer", "")).strip()
     sections = [answer] if answer else []
@@ -370,6 +433,13 @@ def handle_deep_research_command(user_text: str) -> bool:
     set_state("Deep Research")
     result = research_query(task, max_sources=8)
     print_chat_message("Helium", result, style="cyan", markdown=True)
+    return True
+
+def handle_help_command(user_text: str) -> bool:
+    if not parse_help_command(user_text):
+        return False
+
+    print_chat_message("Helium", build_help_text(), style="cyan", markdown=True)
     return True
 
 def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
@@ -510,6 +580,8 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
 
                 reset_state()
                 record_command(user_text)
+                if handle_help_command(user_text):
+                    continue
                 if handle_code_command(user_text, confirm_tool=confirm_tool):
                     continue
                 if handle_deep_research_command(user_text):

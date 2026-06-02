@@ -2,6 +2,7 @@ import os
 from prompt_toolkit.completion import Completer, Completion
 
 SLASH_COMMANDS = (
+    "/help",
     "/code",
     "/deep-research",
 )

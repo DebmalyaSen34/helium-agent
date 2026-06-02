@@ -61,6 +61,28 @@ class DeepResearchCommandTests(unittest.TestCase):
         self.assertIsNone(parsed)
 
 
+class HelpCommandTests(unittest.TestCase):
+    def test_parse_help_command_matches_help_only(self):
+        self.assertTrue(main.parse_help_command("/help"))
+        self.assertTrue(main.parse_help_command("  /help  "))
+
+    def test_parse_help_command_ignores_prefix_words(self):
+        self.assertFalse(main.parse_help_command("/helpme"))
+        self.assertFalse(main.parse_help_command("hello"))
+
+    def test_build_help_text_includes_core_capabilities(self):
+        help_text = main.build_help_text()
+
+        self.assertIn("/help", help_text)
+        self.assertIn("/code", help_text)
+        self.assertIn("/deep-research", help_text)
+        self.assertIn("@path", help_text)
+        self.assertIn("Agentic coding", help_text)
+        self.assertIn("Deep research", help_text)
+        self.assertIn("Tool safety", help_text)
+        self.assertIn("quit", help_text)
+
+
 class CodeCommandHandlerTests(unittest.TestCase):
     @patch("main.print_chat_message")
     def test_handle_code_command_shows_usage_for_empty_task(self, mock_print):
@@ -163,6 +185,25 @@ class DeepResearchCommandHandlerTests(unittest.TestCase):
 
         self.assertFalse(handled)
         mock_research_query.assert_not_called()
+
+
+class HelpCommandHandlerTests(unittest.TestCase):
+    @patch("main.print_chat_message")
+    def test_handle_help_command_prints_help(self, mock_print):
+        handled = main.handle_help_command("/help")
+
+        self.assertTrue(handled)
+        mock_print.assert_called_once()
+        self.assertIn("/code", mock_print.call_args.args[1])
+        self.assertIn("/deep-research", mock_print.call_args.args[1])
+        self.assertIn("Agentic coding", mock_print.call_args.args[1])
+
+    @patch("main.print_chat_message")
+    def test_handle_help_command_ignores_normal_chat(self, mock_print):
+        handled = main.handle_help_command("hello")
+
+        self.assertFalse(handled)
+        mock_print.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

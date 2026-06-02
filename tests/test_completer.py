@@ -19,6 +19,16 @@ def test_slash_command_completer_suggests_code_and_deep_research():
 
     assert "/code" in matches
     assert "/deep-research" in matches
+    assert "/help" in matches
+
+def test_slash_command_completer_filters_help_by_prefix():
+    completer = WorkspaceFileCompleter()
+    doc = Document("/h", cursor_position=2)
+
+    completions = list(completer.get_completions(doc, None))
+    matches = [c.text for c in completions]
+
+    assert matches == ["/help"]
 
 def test_slash_command_completer_filters_by_prefix():
     completer = WorkspaceFileCompleter()
