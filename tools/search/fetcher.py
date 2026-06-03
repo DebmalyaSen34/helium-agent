@@ -167,11 +167,23 @@ class ContentFetcher:
         return fallback
 
     def _extract_text(self, soup: BeautifulSoup) -> str:
-        for tag in soup(["script", "style", "noscript"]):
+        import re
+        
+        # Decompose structural layout tags
+        for tag in soup(["script", "style", "noscript", "nav", "header", "footer", "aside"]):
             tag.decompose()
+
+        # Decompose elements with classes/IDs matching layout keywords
+        nav_pattern = re.compile(r"\b(nav|menu|sidebar|footer|header|meta)\b", re.I)
+        for element in soup.find_all(attrs={"class": nav_pattern}):
+            element.decompose()
+        for element in soup.find_all(attrs={"id": nav_pattern}):
+            element.decompose()
 
         chunks: list[str] = []
         for element in soup.find_all(["h1", "h2", "h3", "p", "li"]):
+            if not element.name:
+                continue
             text = " ".join(element.get_text(" ", strip=True).split())
             if text:
                 chunks.append(text)

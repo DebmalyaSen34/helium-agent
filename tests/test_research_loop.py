@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from tools.research.loop import ResearchLoop
 from tools.research.models import ResearchPlan, ResearchSubquery
@@ -144,6 +145,13 @@ class SparseSearchPipeline(FakeSearchPipeline):
 
 
 class ResearchLoopTests(unittest.TestCase):
+    def setUp(self):
+        self.patcher = patch("core.llm.call_llm_once", side_effect=Exception("API offline"))
+        self.mock_call = self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+
     def test_loop_creates_todos_and_returns_report(self) -> None:
         search_pipeline = FakeSearchPipeline()
         loop = ResearchLoop(

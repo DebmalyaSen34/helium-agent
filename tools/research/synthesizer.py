@@ -8,24 +8,141 @@ class ResearchSynthesizer:
         self.source_policy = source_policy or SourcePolicy()
 
     def synthesize(self, plan: ResearchPlan, evidence: list[ResearchEvidence]) -> ResearchReport:
+        from tools.research.models import ResearchReport
+
         findings = self._findings(evidence)
         source_urls = self._source_urls(evidence)
         caveats = self._caveats(plan, evidence, source_urls)
         confidence = self._confidence(source_urls, caveats)
 
+        # Build fallback report first
         if findings:
-            answer = "\n".join(f"- {finding}" for finding in findings[:8])
+            fallback_answer = "\n".join(f"- {finding}" for finding in findings[:8])
         else:
-            answer = "No source evidence was available, so no supported research answer could be generated."
+            fallback_answer = "No source evidence was available, so no supported research answer could be generated."
 
-        return ResearchReport(
+        fallback_report = ResearchReport(
             original_query=plan.original_query,
             question_type=plan.question_type,
-            answer=answer,
+            answer=fallback_answer,
             confidence=confidence,
             caveats=caveats,
             source_urls=source_urls,
+            key_findings=[],
+            details=""
         )
+
+        if not evidence:
+            return fallback_report
+
+        # Try to synthesize using LLM
+        try:
+            from core.llm import call_llm_once
+            import json
+            import re
+
+            source_mapping = {url: idx for idx, url in enumerate(source_urls, 1)}
+            evidence_lines = []
+            for item in evidence:
+                evidence_lines.append(f"### Subquery: {item.subquery.query}")
+                evidence_lines.append(f"Purpose: {item.subquery.purpose}")
+                for claim in item.pack.claims[:5]:
+                    idx = source_mapping.get(claim.url, "?")
+                    evidence_lines.append(f"- Claim: {claim.claim} [Source: [{idx}] {claim.url}]")
+                for page in item.pack.pages[:2]:
+                    if page.ok and page.text:
+                        idx = source_mapping.get(page.url, "?")
+                        snippet = page.text.strip()[:600]
+                        evidence_lines.append(f"- Snippet from '{page.title}': {snippet}... [Source: [{idx}] {page.url}]")
+
+            sources_text = "\n".join(f"[{idx}] {url}" for url, idx in source_mapping.items())
+            evidence_text = "\n".join(evidence_lines)
+
+            prompt = f"""
+You are a research synthesis module. Write a cited, high-quality, professional research report based ONLY on the gathered evidence.
+
+Original User Query:
+{plan.original_query}
+
+Preferred Source Types:
+{plan.preferred_source_types}
+
+Ambiguity Notes:
+{plan.ambiguity_notes}
+
+Sources List:
+{sources_text}
+
+Evidence Gathered:
+{evidence_text}
+
+Instructions:
+1. Synthesize the evidence into a coherent report. Do not fabricate facts or sources outside the provided evidence.
+2. In your writing, use citation markers like [1], [2] to reference the sources from the Sources List.
+3. Keep the tone professional, objective, and analytical.
+4. Output your response as a single valid JSON object matching the schema below. Do not include markdown formatting or extra text.
+
+JSON Schema:
+{{
+  "short_answer": "A concise paragraph summarizing the answer to the query.",
+  "key_findings": [
+    "A major finding with citation, e.g. [1].",
+    "Another key finding..."
+  ],
+  "details": "A detailed multi-paragraph breakdown of the findings, explaining nuances, differences, and background context with citations.",
+  "confidence": "high | medium | low",
+  "confidence_reason": "Brief reason for this confidence rating.",
+  "caveats": [
+    "A limitation, potential bias, or gap in the evidence...",
+    "Another caveat..."
+  ]
+}}
+""".strip()
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a research synthesis module. Synthesize a coherent, factual, and cited report from search evidence.",
+                },
+                {"role": "user", "content": prompt},
+            ]
+
+            raw_reply, _ = call_llm_once(messages)
+            text = raw_reply.strip()
+            if text.startswith("```"):
+                text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+                text = re.sub(r"```$", "", text).strip()
+
+            first = text.find("{")
+            last = text.rfind("}")
+            if first != -1 and last != -1 and last > first:
+                data = json.loads(text[first:last+1])
+                
+                # Extract structured fields
+                short_answer = data.get("short_answer") or fallback_answer
+                key_findings = data.get("key_findings") or []
+                details = data.get("details") or short_answer
+                
+                raw_conf = data.get("confidence") or confidence
+                conf_reason = data.get("confidence_reason")
+                conf_text = f"{raw_conf} ({conf_reason})" if conf_reason else raw_conf
+                
+                rep_caveats = data.get("caveats") or caveats
+
+                return ResearchReport(
+                    original_query=plan.original_query,
+                    question_type=plan.question_type,
+                    answer=short_answer,
+                    confidence=conf_text,
+                    caveats=rep_caveats,
+                    source_urls=source_urls,
+                    key_findings=key_findings,
+                    details=details
+                )
+        except Exception:
+            pass
+
+        return fallback_report
     
     def render(self, report: ResearchReport) -> str:
         lines = [
@@ -35,16 +152,20 @@ class ResearchSynthesizer:
             "Key findings:",
         ]
 
-        if report.answer.startswith("- "):
-            lines.extend(report.answer.splitlines())
+        if getattr(report, "key_findings", None):
+            lines.extend(f"- {finding}" for finding in report.key_findings)
         else:
-            lines.append(f"_ {report.answer}")
+            if report.answer.startswith("- "):
+                lines.extend(report.answer.splitlines())
+            else:
+                lines.append(f"_ {report.answer}")
 
+        details = getattr(report, "details", None) or report.answer
         lines.extend(
             [
                 "",
                 "Details:",
-                report.answer,
+                details,
                 "",
                 "Confidence:",
                 report.confidence,

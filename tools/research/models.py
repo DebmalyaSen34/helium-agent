@@ -31,3 +31,5 @@ class ResearchReport:
     confidence: str
     caveats: list[str]
     source_urls: list[str]
+    key_findings: list[str] = field(default_factory=list)
+    details: str = ""

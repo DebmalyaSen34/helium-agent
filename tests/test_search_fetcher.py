@@ -63,6 +63,34 @@ class ContentFetcherTests(unittest.TestCase):
         self.assertFalse(pages[1].ok)
         self.assertEqual(pages[1].error, "network down")
 
+    def test_fetcher_ignores_nav_and_layout_blocks(self):
+        html_with_nav = """
+        <html>
+          <body>
+            <nav><ul><li><a href="/home">Home Link</a></li></ul></nav>
+            <div class="sidebar-wrapper">Sidebar Content</div>
+            <div id="footer-menu">Footer Menu Content</div>
+            <h1>Core Heading</h1>
+            <p>Core Paragraph text here.</p>
+          </body>
+        </html>
+        """
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.text = html_with_nav
+
+        result = SearchResult("Result Title", "https://example.com/test", "snippet", "ddgs", 1, "query")
+        with patch("tools.search.fetcher.BROWSER_SETTINGS", {"use_playwright": False, "fallback_only": True}), \
+             patch("tools.search.fetcher.requests.get", return_value=response):
+            pages = ContentFetcher(timeout=1.0).fetch([result])
+
+        self.assertEqual(len(pages), 1)
+        self.assertNotIn("Home Link", pages[0].text)
+        self.assertNotIn("Sidebar Content", pages[0].text)
+        self.assertNotIn("Footer Menu Content", pages[0].text)
+        self.assertIn("Core Heading", pages[0].text)
+        self.assertIn("Core Paragraph text here.", pages[0].text)
+
 
 if __name__ == "__main__":
     unittest.main()

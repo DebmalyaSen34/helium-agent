@@ -97,11 +97,20 @@ class EvidenceExtractor:
         for page in pages:
             if not page.ok:
                 continue
+            
+            page_claims = 0
             sentences = re.split(r"(?<=[.!?])\s+", page.text)
             for sentence in sentences:
                 sentence = " ".join(sentence.split())
                 if len(sentence.split()) < 5:
                     continue
+                
+                # Skip sentences containing obvious navigation words
+                lowered = sentence.lower()
+                nav_indicators = ["main page", "current events", "terms of use", "create account", "log in", "privacy policy", "contact us"]
+                if any(ind in lowered for ind in nav_indicators):
+                    continue
+                
                 claims.append(
                     EvidenceItem(
                         claim=sentence,
@@ -110,5 +119,7 @@ class EvidenceExtractor:
                         source=page.source_result.provider,
                     )
                 )
-                break
+                page_claims += 1
+                if page_claims >= 10:
+                    break
         return claims

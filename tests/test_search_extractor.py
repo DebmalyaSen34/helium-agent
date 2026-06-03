@@ -76,6 +76,21 @@ class EvidenceExtractorTests(unittest.TestCase):
         self.assertGreater(ranked_matches[0].score, 1.0)
         self.assertEqual(ranked_claims, [])
 
+    def test_extracts_multiple_claims_and_filters_nav(self):
+        plan = SearchPlan("explain attention", "research", ["query"])
+        page = self._page(
+            "Main page Contents Current events. "
+            "Attention lets a model weight tokens by relevance. "
+            "Self-attention allows the model to look at other tokens. "
+            "Terms of use create account log in."
+        )
+
+        matches, claims = EvidenceExtractor(today=dt.date(2026, 5, 12)).extract(plan, [page])
+
+        self.assertEqual(len(claims), 2)
+        self.assertEqual(claims[0].claim, "Attention lets a model weight tokens by relevance.")
+        self.assertEqual(claims[1].claim, "Self-attention allows the model to look at other tokens.")
+
 
 if __name__ == "__main__":
     unittest.main()
