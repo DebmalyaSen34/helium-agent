@@ -148,6 +148,31 @@ class CodeCommandHandlerTests(unittest.TestCase):
         self.assertIn("python -m unittest tests.test_example -v", rendered)
         self.assertIn("Remaining risks:", rendered)
 
+    @patch("main.run_coding_workflow")
+    @patch("main.print_chat_message")
+    @patch("main.set_state")
+    def test_handle_code_command_appends_warning_on_max_turns(
+        self,
+        _mock_set_state,
+        mock_print,
+        mock_run_workflow,
+    ):
+        class Result:
+            final_answer = "Partially implemented changes."
+            stop_reason = "max_turns"
+            changed_files = ["core/example.py"]
+            verification_commands = []
+
+        mock_run_workflow.return_value = Result()
+
+        handled = main.handle_code_command("/code change example", confirm_tool=lambda *_args: True)
+
+        self.assertTrue(handled)
+        rendered = mock_print.call_args.args[1]
+        self.assertIn("Partially implemented changes.", rendered)
+        self.assertIn("Warning: The coding workflow reached the maximum turn limit and had to stop", rendered)
+
+
 
 class DeepResearchCommandHandlerTests(unittest.TestCase):
     @patch("main.print_chat_message")

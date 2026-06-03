@@ -55,7 +55,10 @@ def build_coding_system_prompt(task: str) -> str:
         "- run focused verification when the task changes code, tests, or configuration\n"
         "- never claim tests passed unless a verification command actually ran and succeeded\n"
         "- if verification cannot run, say why\n"
-        "- if the task is incomplete, say exactly what remains\n\n"
+        "- if the task is incomplete, say exactly what remains\n"
+        "- if you do not know or are unsure about the programming language, the syntax, or anything related to the task, search the web to get the appropriate data to enhance your workflow\n"
+        "- do not get stuck in a research loop. Start writing code and implementing changes as soon as you have sufficient information.\n"
+        "- prioritize implementation and verification; do not exhaust all your turns on research or searching.\n\n"
         "Final answer format:\n"
         "Changed files:\n"
         "- <file or None>\n\n"
@@ -91,7 +94,7 @@ def run_coding_workflow(
     confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
     ask_model: Callable[[list[dict[str, str]]], str] | None = None,
     execute_tool_call: Callable[..., str | None] | None = None,
-    max_turns: int = 8,
+    max_turns: int = 30,
 ) -> CodingWorkflowResult:
     
     changed_files: list[str] = []

@@ -411,3 +411,34 @@ def test_wrapper_returns_controlled_error_string(tmp_path):
 
     assert "status: error" in result
     assert "reason:" in result
+
+
+def test_list_directory_with_outside_symlink(tmp_path):
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    outside_file = outside / "secret.txt"
+    outside_file.write_text("secret content", encoding="utf-8")
+
+    link = tmp_path / "link.txt"
+    link.symlink_to(outside_file)
+
+    service = FileOperationService(tmp_path)
+    # This currently raises ValueError because link.txt resolves outside tmp_path
+    result = service.list_directory(".")
+    assert "link.txt" in result.details
+
+
+def test_search_text_with_outside_symlink(tmp_path):
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    outside_file = outside / "secret.txt"
+    outside_file.write_text("needle", encoding="utf-8")
+
+    link = tmp_path / "link.txt"
+    link.symlink_to(outside_file)
+
+    service = FileOperationService(tmp_path)
+    # This currently raises ValueError because link.txt resolves outside tmp_path
+    result = service.search_text("needle")
+    assert "link.txt" not in result.details
+

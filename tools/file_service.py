@@ -331,7 +331,10 @@ class FileOperationService:
         for entry in sorted(iterator):
             if len(entries) >= max_entries:
                 break
-            relative = entry.resolve().relative_to(self.project_root).as_posix()
+            try:
+                relative = entry.resolve().relative_to(self.project_root).as_posix()
+            except ValueError:
+                relative = entry.relative_to(self.project_root).as_posix()
             suffix = "/" if entry.is_dir() else ""
             entries.append(relative + suffix)
 
@@ -364,7 +367,10 @@ class FileOperationService:
                 break
             if not file_path.is_file():
                 continue
-            relative = file_path.resolve().relative_to(self.project_root).as_posix()
+            try:
+                relative = file_path.resolve().relative_to(self.project_root).as_posix()
+            except ValueError:
+                continue
             if glob is not None and not fnmatch.fnmatch(relative, glob):
                 continue
             try:

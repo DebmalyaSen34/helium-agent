@@ -19,6 +19,9 @@ class CodingWorkflowPromptTests(unittest.TestCase):
         self.assertIn("Changed files", prompt)
         self.assertIn("Verification", prompt)
         self.assertIn("Remaining risks", prompt)
+        self.assertIn("search the web", prompt)
+        self.assertIn("not get stuck in a research loop", prompt)
+        self.assertIn("prioritize implementation", prompt)
 
     def test_coding_prompt_includes_user_task(self):
         prompt = build_coding_system_prompt("add parser tests")

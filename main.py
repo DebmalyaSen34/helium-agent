@@ -415,6 +415,12 @@ def format_code_workflow_report(result) -> str:
     if "Remaining risks:" not in answer:
         sections.append("Remaining risks:\n- Not reported")
 
+    if getattr(result, "stop_reason", "") == "max_turns":
+        sections.append(
+            "\n[bold red]Warning: The coding workflow reached the maximum turn limit and had to stop. "
+            "The task might be incomplete.[/bold red]"
+        )
+
     return "\n\n".join(sections)
 
 def handle_code_command(user_text: str, confirm_tool) -> bool:
