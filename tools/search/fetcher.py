@@ -76,14 +76,14 @@ class ContentFetcher:
         if use_playwright:
             if not req_ok:
                 needs_fallback = True
-                logger.info("Requests failed for %s. Falling back to Playwright...", result.url)
+                logger.debug("Requests failed for %s. Falling back to Playwright...", result.url)
             else:
                 # Check for empty text or JS required indicator in text
                 text_lower = text.lower()
                 has_js_warning = any(phrase in text_lower for phrase in JS_REQUIRED_PHRASES)
                 if len(text.strip()) < 200 or has_js_warning:
                     needs_fallback = True
-                    logger.info(
+                    logger.debug(
                         "Extracted text too short or JS warning detected for %s (len=%d, js_warn=%s). "
                         "Falling back to Playwright...",
                         result.url, len(text), has_js_warning
@@ -98,7 +98,7 @@ class ContentFetcher:
                 logger.error("Playwright failed to fetch %s: %s", result.url, exc)
                 # If Playwright failed, but requests succeeded in Phase 1, return the requests result
                 if req_ok:
-                    logger.info("Reverting to Requests result for %s despite JS/short text warnings.", result.url)
+                    logger.debug("Reverting to Requests result for %s despite JS/short text warnings.", result.url)
                     return FetchedPage(url=result.url, title=title, text=text, source_result=result)
                 
                 # If both failed, return a failed FetchedPage

@@ -59,7 +59,7 @@ class ResearchSynthesizer:
             evidence_text = "\n".join(evidence_lines)
 
             prompt = f"""
-You are a research synthesis module. Write a cited, high-quality, professional research report based ONLY on the gathered evidence.
+You are a research synthesis module. Write a cited, high-quality, professional, and comprehensive research report based ONLY on the gathered evidence.
 
 Original User Query:
 {plan.original_query}
@@ -77,19 +77,19 @@ Evidence Gathered:
 {evidence_text}
 
 Instructions:
-1. Synthesize the evidence into a coherent report. Do not fabricate facts or sources outside the provided evidence.
+1. Synthesize the evidence into a coherent, comprehensive, detailed in-depth report. Do not fabricate facts or sources outside the provided evidence.
 2. In your writing, use citation markers like [1], [2] to reference the sources from the Sources List.
 3. Keep the tone professional, objective, and analytical.
-4. Output your response as a single valid JSON object matching the schema below. Do not include markdown formatting or extra text.
+4. Output your response as a single valid JSON object matching the schema below. Do not include markdown formatting or extra text outside the JSON.
 
 JSON Schema:
 {{
-  "short_answer": "A concise paragraph summarizing the answer to the query.",
+  "short_answer": "A concise, comprehensive paragraph summarizing the core answer to the query.",
   "key_findings": [
     "A major finding with citation, e.g. [1].",
     "Another key finding..."
   ],
-  "details": "A detailed multi-paragraph breakdown of the findings, explaining nuances, differences, and background context with citations.",
+  "details": "An in-depth, detailed multi-paragraph breakdown of the findings, explaining nuances, comparisons, and background context with citations (e.g. [1], [2]). This section should be comprehensive, rich in information, and use markdown subheadings and bullet points for structural formatting to make it look highly professional and clear.",
   "confidence": "high | medium | low",
   "confidence_reason": "Brief reason for this confidence rating.",
   "caveats": [
@@ -146,46 +146,43 @@ JSON Schema:
     
     def render(self, report: ResearchReport) -> str:
         lines = [
-            "Short answer:",
+            f"# Research Report: {report.original_query}",
+            "",
+            "## Executive Summary",
             report.answer,
             "",
-            "Key findings:",
+            "## Key Findings",
         ]
 
         if getattr(report, "key_findings", None):
-            lines.extend(f"- {finding}" for finding in report.key_findings)
+            lines.extend(f"* {finding}" for finding in report.key_findings)
         else:
-            if report.answer.startswith("- "):
+            if report.answer.startswith(("- ", "* ")):
                 lines.extend(report.answer.splitlines())
             else:
-                lines.append(f"_ {report.answer}")
+                lines.append(f"* {report.answer}")
 
         details = getattr(report, "details", None) or report.answer
         lines.extend(
             [
                 "",
-                "Details:",
+                "## Detailed Analysis",
                 details,
                 "",
-                "Confidence:",
-                report.confidence,
+                "## Research Quality & Confidence",
+                f"* **Confidence Level**: {report.confidence}",
             ]
         )
 
         if report.caveats:
-            lines.extend(
-                [
-                    "",
-                    "Caveats:",
-                ]
-            )
-            lines.extend(f"- {caveat}" for caveat in report.caveats)
+            lines.append("* **Caveats & Limitations**:")
+            lines.extend(f"  * {caveat}" for caveat in report.caveats)
 
-        lines.extend(["", "Sources:"])
+        lines.extend(["", "## Sources"])
         if report.source_urls:
-            lines.extend(f"- {url}" for url in report.source_urls)
+            lines.extend(f"{idx}. {url}" for idx, url in enumerate(report.source_urls, 1))
         else:
-            lines.append("- No sources were available.")
+            lines.append("* No sources were available.")
 
         return "\n".join(lines)
     

@@ -18,7 +18,7 @@ def browse_url(url: str, max_chars: int = 5000) -> str:
     Returns:
         A string containing the page title and the extracted text.
     """
-    logger.info("Direct browsing requested for: %s", url)
+    logger.debug("Direct browsing requested for: %s", url)
     
     url = url.strip()
     if not url.startswith(("http://", "https://")):

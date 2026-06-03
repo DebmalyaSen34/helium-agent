@@ -89,6 +89,10 @@ logging.basicConfig(
     ],
 )
 
+# Silence verbose third-party loggers
+for logger_name in ["urllib3", "httpx", "requests", "playwright", "filelock"]:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+
 logger = logging.getLogger("rich")
 console = Console()
 _last_state_key: tuple[str, str | None] | None = None

@@ -93,10 +93,10 @@ class TestResearchPipeline(unittest.TestCase):
 
         report = pipeline.run("compare India and China GDP in 2025")
 
-        self.assertIn("Short answer:", report)
-        self.assertIn("Key findings:", report)
-        self.assertIn("Sources:", report)
-        self.assertIn("Confidence:", report)
+        self.assertIn("## Executive Summary", report)
+        self.assertIn("## Key Findings", report)
+        self.assertIn("## Sources", report)
+        self.assertIn("## Research Quality & Confidence", report)
         self.assertIn("https://www.imf.org/report", report)
         self.assertIn("https://www.reuters.com/markets/story", report)
 
@@ -122,7 +122,7 @@ class TestResearchPipeline(unittest.TestCase):
 
         report = pipeline.run("Why is Indian Rupee falling recently?")
 
-        self.assertIn("Confidence:", report)
+        self.assertIn("## Research Quality & Confidence", report)
         self.assertIn("low", report.casefold())
         self.assertIn("no source evidence", report.casefold())
 

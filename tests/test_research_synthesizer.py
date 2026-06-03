@@ -139,13 +139,12 @@ class TestResearchSynthesizer(unittest.TestCase):
 
         report = ResearchSynthesizer().synthesize(plan, evidence)
         rendered = ResearchSynthesizer().render(report)
-
-        self.assertIn("Short answer:", rendered)
-        self.assertIn("Key findings:", rendered)
-        self.assertIn("Details:", rendered)
-        self.assertIn("Confidence:", rendered)
-        self.assertIn("Caveats:", rendered)
-        self.assertIn("Sources:", rendered)
+        self.assertIn("# Research Report:", rendered)
+        self.assertIn("## Executive Summary", rendered)
+        self.assertIn("## Key Findings", rendered)
+        self.assertIn("## Detailed Analysis", rendered)
+        self.assertIn("## Research Quality & Confidence", rendered)
+        self.assertIn("## Sources", rendered)
         self.assertIn("https://www.imf.org/report", rendered)
 
     def test_synthesizer_low_confidence_without_sources(self):
@@ -171,9 +170,9 @@ class TestResearchSynthesizer(unittest.TestCase):
 
         rendered = ResearchSynthesizer().render(report)
 
-        self.assertIn("Short answer:\nShort answer context.", rendered)
-        self.assertIn("Key findings:\n- Finding one.\n- Finding two.", rendered)
-        self.assertIn("Details:\nDetailed description paragraph here.", rendered)
+        self.assertIn("## Executive Summary\nShort answer context.", rendered)
+        self.assertIn("## Key Findings\n* Finding one.\n* Finding two.", rendered)
+        self.assertIn("## Detailed Analysis\nDetailed description paragraph here.", rendered)
 
     def test_synthesizer_falls_back_when_llm_fails(self):
         plan = research_plan()
