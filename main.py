@@ -545,8 +545,8 @@ def ensure_llm_runtime_config() -> bool:
     console.print(app_panel(
         "[bold cyan]Welcome to Helium Agent![/bold cyan]\n\n"
         "Some required LLM settings are missing or unable to connect.\n"
-        "Persistent API keys are saved to your system credential manager.\n"
-        "Non-secret defaults are saved to your user Helium config file.",
+        "All settings, including the API key, are saved to your user Helium config file\n"
+        "with secure owner-only permissions.",
         title="Setup Wizard",
         border_style="cyan",
     ))
@@ -581,7 +581,7 @@ def ensure_llm_runtime_config() -> bool:
             model=entered_model,
             use_playwright=use_playwright == "true",
         )
-        console.print("\n[green]LLM API key saved to the system credential manager.[/green]\n")
+        console.print("\n[green]LLM API key saved to the user config file.[/green]\n")
         return True
     except RuntimeConfigError as exc:
         console.print(f"[bold red]{exc}[/bold red]\n")

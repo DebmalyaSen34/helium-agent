@@ -14,23 +14,12 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
     tomllib = None
 
 try:
-    import keyring
-    from keyring.errors import KeyringError
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    keyring = None
-
-    class KeyringError(Exception):
-        pass
-
-try:
     from platformdirs import user_config_dir
 except ModuleNotFoundError:  # pragma: no cover - optional dependency fallback
     user_config_dir = None
 
 
 APP_NAME = "helium-agent"
-KEYRING_SERVICE = "helium-agent"
-KEYRING_ACCOUNT = "LLM_API_KEY"
 LEGACY_ENV_PATH = Path.home() / ".helium.env"
 
 
@@ -118,11 +107,9 @@ class RuntimeConfigStore:
     def __init__(
         self,
         config_path: Path | None = None,
-        keyring_backend: Any | None = None,
         legacy_env_path: Path = LEGACY_ENV_PATH,
     ) -> None:
         self.config_path = config_path or default_user_config_path()
-        self.keyring_backend = keyring_backend if keyring_backend is not None else keyring
         self.legacy_env_path = legacy_env_path
 
     def load(self, include_legacy: bool = False) -> LlmRuntimeConfig:
@@ -136,7 +123,7 @@ class RuntimeConfigStore:
         sources: dict[str, str] = {}
 
         self._apply_env(loaded, sources)
-        self._apply_keyring_and_user_config(loaded, sources, user_config)
+        self._apply_user_config(loaded, sources, user_config)
         if include_legacy:
             self._apply_legacy(loaded, sources)
 
@@ -155,14 +142,9 @@ class RuntimeConfigStore:
         model: str | None,
         use_playwright: bool | None,
     ) -> None:
-        if api_key:
-            backend = self._require_keyring()
-            try:
-                backend.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, api_key)
-            except KeyringError as exc:
-                raise RuntimeConfigError("Could not save API key to keyring.") from exc
-
         values: dict[str, Any] = {}
+        if api_key is not None:
+            values["llm_api_key"] = api_key
         if api_url is not None:
             values["llm_api_url"] = api_url
         if model is not None:
@@ -189,40 +171,28 @@ class RuntimeConfigStore:
 
     def _write_user_config(self, values: dict[str, Any]) -> None:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.config_path.exists():
+            fd = os.open(self.config_path, os.O_CREAT | os.O_WRONLY, 0o600)
+            os.close(fd)
+        else:
+            try:
+                self.config_path.chmod(0o600)
+            except OSError:  # pragma: no cover
+                pass
         lines = [f"{name} = {_toml_value(value)}" for name, value in values.items()]
         text = "\n".join(lines)
         if text:
             text += "\n"
         self.config_path.write_text(text)
 
-    def _require_keyring(self) -> Any:
-        if self.keyring_backend is None:
-            raise RuntimeConfigError("Keyring is required to save API keys securely.")
-        return self.keyring_backend
-
-    def _get_keyring_api_key(self) -> str | None:
-        if self.keyring_backend is None:
-            return None
-        try:
-            return _clean_string(
-                self.keyring_backend.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
-            )
-        except KeyringError as exc:
-            raise RuntimeConfigError("Could not load API key from keyring.") from exc
-
-    def _apply_keyring_and_user_config(
+    def _apply_user_config(
         self,
         loaded: dict[str, Any],
         sources: dict[str, str],
         user_config: dict[str, Any],
     ) -> None:
-        if loaded.get("api_key") is None:
-            api_key = self._get_keyring_api_key()
-            if api_key is not None:
-                loaded["api_key"] = api_key
-                sources["api_key"] = "keyring"
-
         field_map = {
+            "api_key": "llm_api_key",
             "api_url": "llm_api_url",
             "model": "llm_model",
             "use_playwright": "use_playwright",

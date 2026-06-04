@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from tools.research.models import ResearchPlan, ResearchSubquery
 from tools.research.pipeline import ResearchPipeline
@@ -84,6 +85,13 @@ class FakeEmptySearchPipeline:
 
 
 class TestResearchPipeline(unittest.TestCase):
+    def setUp(self):
+        self.patcher = patch("core.llm.call_llm_once", side_effect=Exception("API offline"))
+        self.mock_call = self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+
     def test_research_pipeline_returns_cited_report(self):
         pipeline = ResearchPipeline(
             search_pipeline=FakeSearchPipeline(),
