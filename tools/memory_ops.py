@@ -84,21 +84,26 @@ _CATEGORY_MAP = {
 }
 
 
-def initialize_session() -> None:
-    """Start a fresh session backed by PersistentMemoryManager (in-memory).
+def initialize_session(db_path=None) -> None:
+    """Start a session backed by PersistentMemoryManager (on-disk).
+
+    Args:
+        db_path: Optional database path. Defaults to MEMORY_DB from config.
 
     Note: shutdown() should be called on process exit to persist session data.
     Will be wired in Task 9 via main.py atexit/signal handling.
     """
     from memory.manager import PersistentMemoryManager
+    from config.settings import MEMORY_DB
 
     global _manager
-    _manager = PersistentMemoryManager(":memory:")
+    path = db_path or str(MEMORY_DB)
+    _manager = PersistentMemoryManager(path)
     session_id, _context = _manager.startup()
     _manager.session_id = session_id
     logger.info(
-        "Session memory initialized (PersistentMemoryManager, in-memory) session_id=%s.",
-        session_id,
+        "Session memory initialized (PersistentMemoryManager, db=%s) session_id=%s.",
+        path, session_id,
     )
 
 

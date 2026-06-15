@@ -1,10 +1,23 @@
+import os
+import tempfile
 import unittest
 from tools import memory_ops
 
 
 class MemoryOpsTests(unittest.TestCase):
     def setUp(self):
-        memory_ops.initialize_session()
+        self._tmp_dir = tempfile.mkdtemp()
+        self._db_path = os.path.join(self._tmp_dir, "test_memory.db")
+        memory_ops.initialize_session(db_path=self._db_path)
+
+    def tearDown(self):
+        memory_ops.shutdown_session()
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.remove(self._db_path + suffix)
+            except FileNotFoundError:
+                pass
+        os.rmdir(self._tmp_dir)
 
     def test_remember_and_retrieve_ops(self):
         # Store facts
