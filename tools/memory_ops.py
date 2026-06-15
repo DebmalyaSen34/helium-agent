@@ -181,3 +181,17 @@ def get_relevant_memories(query: str) -> list[str]:
     except Exception as e:
         logger.error("Error retrieving relevant memories: %s", e)
         return []
+
+
+def forget_fact(identifier: str | int) -> str:
+    """Deletes a memory by id or content match."""
+    if _manager is None:
+        return "Error: Session not initialized. Call initialize_session() first."
+    try:
+        count = _manager.forget(identifier)
+        if count:
+            return f"Forgot {count} memory/memories."
+        return f"No memory matching '{identifier}' found."
+    except Exception as e:
+        logger.error("Error forgetting fact: %s", e)
+        return f"Error forgetting memory: {e}"

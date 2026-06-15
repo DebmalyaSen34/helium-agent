@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
-from tools.memory_ops import remember_fact, retrieve_facts
+from tools.memory_ops import remember_fact, retrieve_facts, forget_fact
 from tools.system_ops import open_app, get_time
 from tools.file_ops import (
     append_file,
@@ -64,6 +64,7 @@ AVAILABLE_TOOLS = {
     "research_query": ToolDefinition(research_query, "Researches complex analytical questions using multiple searches and citations.", "safe"),
     "remember_fact": ToolDefinition(remember_fact, "Saves a user fact or preference into long-term memory.", "safe"),
     "retrieve_facts": ToolDefinition(retrieve_facts, "Retrieves saved facts and preferences.", "safe"),
+    "forget_fact": ToolDefinition(forget_fact, "Deletes a memory by id or content match.", "safe"),
     "open_app": ToolDefinition(open_app, "Opens a macOS application.", "risky"),
     "get_time": ToolDefinition(get_time, "Returns the current system time.", "safe"),
     "browse_url": ToolDefinition(browse_url, "Navigates to a specific website, executes JavaScript using Playwright, and extracts clean, readable text.", "safe"),
@@ -146,11 +147,12 @@ delete_file permanently deletes after user confirmation.
 </web_and_research_tools>
 
 <memory_and_system_tools>
-20. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact/preference into long-term memory. Permission: safe.
-21. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts/preferences. Permission: safe.
-22. open_app(app_name: str) - Opens a macOS application. Permission: risky.
-23. get_time() - Returns the current system time. Permission: safe.
-24. execute_bash(command: str) - Executes a single-shot bash command on the macOS host system within a 30-second timeout. Read-only commands run automatically without prompt. Modifying commands require explicit user approval. Prefer file tools for file manipulation. Permission: conditional.
+20. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact/preference into persistent long-term memory. Permission: safe.
+21. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts/preferences from persistent memory. Permission: safe.
+22. forget_fact(identifier: str | int) - Deletes a memory by id (int) or content match (str). Permission: safe.
+23. open_app(app_name: str) - Opens a macOS application. Permission: risky.
+24. get_time() - Returns the current system time. Permission: safe.
+25. execute_bash(command: str) - Executes a single-shot bash command on the macOS host system within a 30-second timeout. Read-only commands run automatically without prompt. Modifying commands require explicit user approval. Prefer file tools for file manipulation. Permission: conditional.
 </memory_and_system_tools>
 
 <subagent_tools>
