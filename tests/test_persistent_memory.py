@@ -2,6 +2,7 @@
 
 import sqlite3
 import sys
+import time
 import types
 from unittest.mock import MagicMock
 
@@ -253,3 +254,151 @@ class TestExtractKeywordsFallback:
         kws = mgr._extract_keywords("Python language")
         mgr.graph._extract_keywords.assert_called_once_with("Python language")
         assert kws == ["python", "language"]
+
+
+# --- Persistence integration tests ---
+
+
+class TestPersistenceIntegration:
+    """Cross-session persistence tests using file-backed SQLite."""
+
+    def test_e2e_persistence_across_sessions(self, tmp_path):
+        """Store facts in session 1, close, reopen same DB, verify survival."""
+        db = str(tmp_path / "persist.db")
+
+        # Session 1: store facts and shut down
+        mgr1 = PersistentMemoryManager(db_path=db)
+        sid1, _ = mgr1.startup()
+        mgr1.remember_fact("Python is a programming language", category="fact")
+        mgr1.remember_fact("The user prefers dark mode", category="preference")
+        mgr1.remember_fact("Project uses FastAPI", category="project")
+        mgr1.shutdown(sid1)
+        mgr1.close()
+
+        # Session 2: reopen same DB, verify facts survived
+        mgr2 = PersistentMemoryManager(db_path=db)
+        sid2, context = mgr2.startup()
+        assert sid2 != sid1
+
+        results = mgr2.retrieve("Python programming")
+        assert any("Python" in r for r in results)
+
+        results = mgr2.retrieve("dark mode preference")
+        assert any("dark mode" in r for r in results)
+
+        results = mgr2.retrieve("FastAPI project")
+        assert any("FastAPI" in r for r in results)
+        mgr2.close()
+
+    def test_session_summary_persisted_after_shutdown(self, tmp_path):
+        """After shutdown, session summary is written to the memories table."""
+        db = str(tmp_path / "summary.db")
+
+        mgr = PersistentMemoryManager(db_path=db)
+        sid, _ = mgr.startup()
+        mgr.append_conversation(sid, "user", "What is the capital of France?")
+        mgr.append_conversation(sid, "assistant", "The capital of France is Paris.")
+        mgr.shutdown(sid)
+        mgr.close()
+
+        # Reopen and check the memories table directly
+        mgr2 = PersistentMemoryManager(db_path=db)
+        rows = mgr2.conn.execute(
+            "SELECT content FROM memories WHERE tags = 'session-summary'"
+        ).fetchall()
+        assert len(rows) >= 1
+        content = rows[0][0]
+        assert "Session context" in content
+        assert "What is the capital of France?" in content
+        assert "Paris" in content
+        mgr2.close()
+
+    def test_session_summary_available_on_next_startup(self, tmp_path):
+        """Session summary from session 1 is returned as context in session 2."""
+        db = str(tmp_path / "ctx.db")
+
+        mgr1 = PersistentMemoryManager(db_path=db)
+        sid1, _ = mgr1.startup()
+        mgr1.append_conversation(sid1, "user", "Remember: I like Rust")
+        mgr1.append_conversation(sid1, "assistant", "Noted, you like Rust.")
+        mgr1.shutdown(sid1)
+        mgr1.close()
+
+        mgr2 = PersistentMemoryManager(db_path=db)
+        _, context = mgr2.startup()
+        assert context is not None
+        assert "Rust" in context
+        mgr2.close()
+
+    def test_large_corpus_retrieval_speed(self, tmp_path):
+        """Store 1000+ memories and verify retrieval completes in <100ms."""
+        db = str(tmp_path / "large.db")
+        mgr = PersistentMemoryManager(db_path=db)
+        mgr.startup()
+
+        # Insert 1200 memories with varied content
+        for i in range(1200):
+            mgr.remember_fact(
+                f"Memory entry {i}: topic-{i % 10} data point about testing",
+                category="fact",
+            )
+
+        # Measure retrieval time
+        start = time.perf_counter()
+        results = mgr.retrieve("topic-5 testing")
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < 0.1, f"Retrieval took {elapsed:.3f}s, expected <0.1s"
+        assert len(results) > 0
+        mgr.close()
+
+    def test_duplicate_facts_deduplicated_on_retrieve(self, tmp_path):
+        """Storing the same fact twice still returns only one copy on retrieval."""
+        db = str(tmp_path / "dedup.db")
+        mgr = PersistentMemoryManager(db_path=db)
+        mgr.startup()
+
+        fact = "Docker containers are lightweight"
+        mgr.remember_fact(fact, category="fact")
+        mgr.remember_fact(fact, category="fact")
+
+        # Verify two rows exist in the DB (no insert-level dedup)
+        count = mgr.conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE content = ?", (fact,)
+        ).fetchone()[0]
+        assert count == 2
+
+        # But retrieval returns only one copy
+        results = mgr.retrieve("Docker lightweight")
+        occurrences = sum(1 for r in results if fact in r)
+        assert occurrences == 1
+        mgr.close()
+
+    def test_empty_db_clean_state(self, tmp_path):
+        """Fresh DB has no memories and startup returns no prior context."""
+        db = str(tmp_path / "empty.db")
+        mgr = PersistentMemoryManager(db_path=db)
+
+        # Verify tables exist but are empty
+        count = mgr.conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        assert count == 0
+
+        # Startup returns a session id but no context
+        session_id, context = mgr.startup()
+        assert isinstance(session_id, str)
+        assert len(session_id) > 0
+        assert context is None
+
+        # Retrieve on empty DB returns empty list
+        results = mgr.retrieve("anything")
+        assert results == []
+
+        # Shutdown on empty session does not crash
+        mgr.shutdown(session_id)
+
+        # Still no session summaries (no conversation was recorded)
+        count = mgr.conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE tags = 'session-summary'"
+        ).fetchone()[0]
+        assert count == 0
+        mgr.close()
