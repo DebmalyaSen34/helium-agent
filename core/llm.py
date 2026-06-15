@@ -223,7 +223,7 @@ def build_system_prompt(prompt: str) -> str:
     memories = get_relevant_memories(prompt)
     if memories:
         memories_text = "\n".join(f"- {m}" for m in memories)
-        system_content += f"\n\n=== RELEVANT SESSION MEMORIES ===\n{memories_text}\n================================"
+        system_content += f"\n\n=== RELEVANT MEMORIES ===\n{memories_text}\n========================"
 
     return system_content
 
