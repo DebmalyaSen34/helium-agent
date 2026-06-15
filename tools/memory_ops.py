@@ -195,3 +195,17 @@ def forget_fact(identifier: str | int) -> str:
     except Exception as e:
         logger.error("Error forgetting fact: %s", e)
         return f"Error forgetting memory: {e}"
+
+
+def shutdown_session() -> None:
+    """Persists session data and cleans up on process exit."""
+    if _manager is None:
+        return
+    try:
+        session_id = getattr(_manager, 'session_id', None)
+        if session_id:
+            _manager.shutdown(session_id)
+        _manager.close()
+        logger.info("Session memory shutdown complete.")
+    except Exception as e:
+        logger.error("Error during memory shutdown: %s", e)

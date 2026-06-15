@@ -1,3 +1,4 @@
+import atexit
 import logging
 import os
 import re
@@ -600,9 +601,10 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
 
     ensure_llm_runtime_config()
 
-    from tools.memory_ops import initialize_session
+    from tools.memory_ops import initialize_session, shutdown_session
     initialize_session()
-    console.print(f"[dim]:: [Session] In-memory SQLite session memory initialized for {workspace}.[/dim]")
+    atexit.register(shutdown_session)
+    console.print(f"[dim]:: [Session] Persistent memory initialized for {workspace}.[/dim]")
 
     if mode == "text":
         print_header("text")
