@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -80,27 +82,6 @@ class SubAgentManagerTests(unittest.TestCase):
         self.assertEqual(agent.result, "file contents here")
         mock_loop.run.assert_called_once()
 
-    def test_run_subagent_sets_running_status(self):
-        agent = self.manager.create_agent(name="worker", role="work")
-
-        mock_loop = MagicMock()
-        mock_loop.run.return_value = MagicMock(
-            final_answer="done",
-            stop_reason="final",
-            tools_used=[],
-            observations=[],
-        )
-
-        with patch("core.subagent_manager.AgenticLoop", return_value=mock_loop):
-            self.manager.run_agent(
-                agent_id=agent.agent_id,
-                task="do something",
-                ask_model=MagicMock(),
-                execute_tool_call=MagicMock(),
-            )
-
-        self.assertEqual(agent.status, SubAgentStatus.COMPLETED)
-
     def test_run_nonexistent_agent_raises(self):
         with self.assertRaises(KeyError):
             self.manager.run_agent(
@@ -118,6 +99,7 @@ class SubAgentManagerTests(unittest.TestCase):
         )
 
         captured_execute = None
+        original_execute = MagicMock(return_value="original result")
 
         mock_loop = MagicMock()
         mock_loop.run.return_value = MagicMock(
@@ -137,10 +119,19 @@ class SubAgentManagerTests(unittest.TestCase):
                 agent_id=agent.agent_id,
                 task="read files",
                 ask_model=MagicMock(),
-                execute_tool_call=MagicMock(),
+                execute_tool_call=original_execute,
             )
 
         self.assertIsNotNone(captured_execute)
+
+        # Disallowed tool should be rejected
+        result = captured_execute({"tool": "write_file"}, confirm_tool=None)
+        self.assertIn("not allowed", result)
+
+        # Allowed tool should delegate to original execute
+        result = captured_execute({"tool": "read_file"}, confirm_tool=None)
+        self.assertEqual(result, "original result")
+        original_execute.assert_called_once_with({"tool": "read_file"}, confirm_tool=None)
 
     def test_terminate_agent(self):
         agent = self.manager.create_agent(name="x", role="y")

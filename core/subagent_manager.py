@@ -32,7 +32,7 @@ class SubAgentManager:
             system_prompt_override=system_prompt_override,
         )
         self.registry.register(agent)
-        logger.info(f"Created subagent '{name}' (id={agent.agent_id})")
+        logger.info("Created subagent '%s' (id=%s)", name, agent.agent_id)
         return agent
 
     def get_agent(self, agent_id: str) -> SubAgent | None:
@@ -46,22 +46,23 @@ class SubAgentManager:
         if agent is None:
             raise KeyError(f"Agent '{agent_id}' not found")
         self.registry.remove(agent_id)
-        logger.info(f"Deleted subagent '{agent.name}' (id={agent_id})")
+        logger.info("Deleted subagent '%s' (id=%s)", agent.name, agent_id)
 
     def terminate_agent(self, agent_id: str) -> None:
         agent = self.registry.get(agent_id)
         if agent is None:
             raise KeyError(f"Agent '{agent_id}' not found")
         agent.status = SubAgentStatus.TERMINATED
-        logger.info(f"Terminated subagent '{agent.name}' (id={agent_id})")
+        logger.info("Terminated subagent '%s' (id=%s)", agent.name, agent_id)
 
     def cleanup_completed(self) -> list[str]:
         removed = []
+        # list_all() returns a snapshot list, so mutating the registry mid-loop is safe.
         for agent in self.registry.list_all():
             if agent.status in (SubAgentStatus.COMPLETED, SubAgentStatus.FAILED, SubAgentStatus.TERMINATED):
                 self.registry.remove(agent.agent_id)
                 removed.append(agent.agent_id)
-                logger.info(f"Cleaned up subagent '{agent.name}' (id={agent.agent_id})")
+                logger.info("Cleaned up subagent '%s' (id=%s)", agent.name, agent.agent_id)
         return removed
 
     def get_children(self, parent_id: str) -> list[SubAgent]:
