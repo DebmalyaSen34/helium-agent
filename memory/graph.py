@@ -3,17 +3,25 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import List, Dict, Optional
-import spacy
 
 logger = logging.getLogger(__name__)
 
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    logger.warning("SpaCy model 'en_core_web_sm' not found. Attempting to download...")
-    from spacy.cli.download import download
-    download("en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
+_nlp = None  # Lazy-loaded spaCy model
+
+
+def _get_nlp():
+    """Load spaCy model on first use."""
+    global _nlp
+    if _nlp is None:
+        import spacy
+        try:
+            _nlp = spacy.load("en_core_web_sm")
+        except OSError:
+            logger.warning("SpaCy model 'en_core_web_sm' not found. Attempting to download...")
+            from spacy.cli.download import download
+            download("en_core_web_sm")
+            _nlp = spacy.load("en_core_web_sm")
+    return _nlp
 
 @dataclass
 class Triplet:
@@ -108,7 +116,7 @@ class KnowledgeGraph:
         return cursor.lastrowid
     
     def _extract_keywords(self, text: str) -> List[str]:
-        doc = nlp(text)
+        doc = _get_nlp()(text)
         keywords = set()
 
         for ent in doc.ents:

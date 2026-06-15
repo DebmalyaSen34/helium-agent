@@ -100,7 +100,7 @@ class PersistentMemoryManager:
         Only generates triplets when the spaCy path succeeds."""
         try:
             keywords = self._extract_keywords(text, _raise_on_fallback=True)
-        except (AttributeError, RuntimeError, OSError) as e:
+        except (AttributeError, RuntimeError, OSError, ImportError) as e:
             logger.warning(f"Triplet extraction skipped, spaCy unavailable: {e}")
             return
         if len(keywords) < 2:
@@ -113,7 +113,7 @@ class PersistentMemoryManager:
         If _raise_on_fallback=True, re-raises the exception instead of falling back."""
         try:
             return self.graph._extract_keywords(text)
-        except (AttributeError, RuntimeError, OSError) as e:
+        except (AttributeError, RuntimeError, OSError, ImportError) as e:
             if _raise_on_fallback:
                 raise
             logger.warning(f"Keyword extraction failed, using fallback: {e}")

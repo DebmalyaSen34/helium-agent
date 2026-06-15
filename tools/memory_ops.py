@@ -6,8 +6,19 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+_manager = None  # PersistentMemoryManager instance, set by initialize_session()
+
+
+# ---------------------------------------------------------------------------
+# Deprecated: SessionMemoryManager — replaced by PersistentMemoryManager
+# ---------------------------------------------------------------------------
 
 class SessionMemoryManager:
+    """DEPRECATED: Use PersistentMemoryManager instead.
+
+    Kept temporarily for reference; will be removed in a future cleanup.
+    """
+
     _instance = None
     _lock = threading.Lock()
 
@@ -33,7 +44,7 @@ class SessionMemoryManager:
                     self.conn.close()
                 except Exception as e:
                     logger.debug("Failed closing old connection: %s", e)
-            
+
             self.conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._init_db()
             logger.info("Session memory initialized (in-memory SQLite).")
@@ -59,20 +70,39 @@ class SessionMemoryManager:
             return self.conn
 
 
+# ---------------------------------------------------------------------------
+# Public API — delegates to PersistentMemoryManager
+# ---------------------------------------------------------------------------
+
+# Category mapping: old plural names -> new singular names
+_CATEGORY_MAP = {
+    "facts": "fact",
+    "preferences": "preference",
+    "fact": "fact",
+    "preference": "preference",
+    "project": "project",
+}
+
+
 def initialize_session() -> None:
-    """Explicitly starts a fresh session-scoped memory database."""
-    SessionMemoryManager().initialize()
+    """Start a fresh session backed by PersistentMemoryManager (in-memory)."""
+    from memory.manager import PersistentMemoryManager
+
+    global _manager
+    _manager = PersistentMemoryManager(":memory:")
+    _manager.startup()
+    logger.info("Session memory initialized (PersistentMemoryManager, in-memory).")
 
 
 def _infer_category(fact: str, category: str | None) -> str:
-    if category in {"facts", "preferences"}:
-        return category
+    if category in _CATEGORY_MAP:
+        return _CATEGORY_MAP[category]
 
     lower_fact = fact.lower()
     preference_markers = ("prefer", "preference", "like", "dislike", "favorite", "favourite")
     if any(marker in lower_fact for marker in preference_markers):
-        return "preferences"
-    return "facts"
+        return "preference"
+    return "fact"
 
 
 def remember_fact(fact: str, category: str | None = None) -> str:
@@ -82,16 +112,9 @@ def remember_fact(fact: str, category: str | None = None) -> str:
         return "Error: Fact cannot be empty."
 
     target_category = _infer_category(fact, category)
-    conn = SessionMemoryManager().get_connection()
     try:
-        with SessionMemoryManager().lock:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR IGNORE INTO session_memories (fact, category) VALUES (?, ?)",
-                (fact, target_category)
-            )
-            conn.commit()
-        return f"Remembered {target_category[:-1]}: {fact}"
+        _manager.remember_fact(fact, category=target_category)
+        return f"Remembered {target_category}: {fact}"
     except Exception as e:
         logger.error("Error remembering fact: %s", e)
         return f"Error saving memory: {e}"
@@ -99,36 +122,29 @@ def remember_fact(fact: str, category: str | None = None) -> str:
 
 def retrieve_facts(category: str | None = None) -> str:
     """Retrieves saved session memories."""
-    conn = SessionMemoryManager().get_connection()
     try:
-        with SessionMemoryManager().lock:
-            cursor = conn.cursor()
-            if category in {"facts", "preferences"}:
-                cursor.execute(
-                    "SELECT fact FROM session_memories WHERE category = ? ORDER BY timestamp DESC",
-                    (category,)
-                )
-                rows = cursor.fetchall()
-                values = [r[0] for r in rows]
-                return f"Saved {category}: " + ", ".join(values) if values else f"No saved {category} yet."
-            
-            cursor.execute("SELECT fact, category FROM session_memories ORDER BY timestamp DESC")
-            rows = cursor.fetchall()
-            
+        mapped = _CATEGORY_MAP.get(category) if category else None
+        rows = _manager.flat_store.list_all(category=mapped)
+
+        if mapped:
+            values = [r["content"] for r in rows]
+            saved_label = f"Saved {category}" if category in {"facts", "preferences"} else f"Saved {mapped}s"
+            return (saved_label + ": " + ", ".join(values)) if values else f"No saved {mapped}s yet."
+
         facts = []
         preferences = []
-        for fact, cat in rows:
-            if cat == "facts":
-                facts.append(fact)
-            else:
-                preferences.append(fact)
-                
+        for r in rows:
+            if r["category"] == "fact":
+                facts.append(r["content"])
+            elif r["category"] == "preference":
+                preferences.append(r["content"])
+
         parts = []
         if facts:
             parts.append("Facts: " + ", ".join(facts))
         if preferences:
             parts.append("Preferences: " + ", ".join(preferences))
-            
+
         return " | ".join(parts) if parts else "No memories saved yet."
     except Exception as e:
         logger.error("Error retrieving memories: %s", e)
@@ -136,53 +152,9 @@ def retrieve_facts(category: str | None = None) -> str:
 
 
 def get_relevant_memories(query: str) -> list[str]:
-    """Finds memories in the session SQLite database relevant to the user query."""
-    words = [
-        w.strip("?,.!:;\"'()").lower()
-        for w in query.split()
-    ]
-    stopwords = {
-        "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your",
-        "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she",
-        "her", "hers", "herself", "it", "its", "itself", "they", "them", "their",
-        "theirs", "themselves", "what", "which", "who", "whom", "this", "that",
-        "these", "those", "am", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "having", "do", "does", "did", "doing", "a", "an",
-        "the", "and", "but", "if", "or", "because", "as", "until", "while", "of",
-        "at", "by", "for", "with", "about", "against", "between", "into", "through",
-        "during", "before", "after", "above", "below", "to", "from", "up", "down",
-        "in", "out", "on", "off", "over", "under", "again", "further", "then",
-        "once", "here", "there", "when", "where", "why", "how", "all", "any",
-        "both", "each", "few", "more", "most", "other", "some", "such", "no",
-        "nor", "not", "only", "own", "same", "so", "than", "too", "very", "s",
-        "t", "can", "will", "just", "don", "should", "now"
-    }
-    
-    keywords = [w for w in words if len(w) >= 3 and w not in stopwords]
-    if not keywords:
-        return []
-        
-    conn = SessionMemoryManager().get_connection()
-    relevant = []
-    
+    """Finds memories relevant to the user query via FTS + graph lookup."""
     try:
-        with SessionMemoryManager().lock:
-            cursor = conn.cursor()
-            seen_facts = set()
-            for kw in keywords:
-                like_pattern = f"%{kw}%"
-                cursor.execute(
-                    "SELECT fact FROM session_memories WHERE fact LIKE ? ORDER BY timestamp DESC LIMIT 5",
-                    (like_pattern,)
-                )
-                rows = cursor.fetchall()
-                for row in rows:
-                    fact = row[0]
-                    if fact not in seen_facts:
-                        seen_facts.add(fact)
-                        relevant.append(fact)
-                        
-        return relevant
+        return _manager.retrieve(query)
     except Exception as e:
-        logger.error("Error retrieving relevant session memories: %s", e)
+        logger.error("Error retrieving relevant memories: %s", e)
         return []
