@@ -41,6 +41,23 @@ class ToolDefinition:
     permission: str = "safe"
 
 
+def _create_subagent_lazy(*args, **kwargs):
+    from tools.subagent_tools import create_subagent
+    return create_subagent(*args, **kwargs)
+
+def _delegate_task_lazy(*args, **kwargs):
+    from tools.subagent_tools import delegate_task
+    return delegate_task(*args, **kwargs)
+
+def _delete_subagent_lazy(*args, **kwargs):
+    from tools.subagent_tools import delete_subagent
+    return delete_subagent(*args, **kwargs)
+
+def _list_subagents_lazy(*args, **kwargs):
+    from tools.subagent_tools import list_subagents
+    return list_subagents(*args, **kwargs)
+
+
 AVAILABLE_TOOLS = {
     "create_file": ToolDefinition(create_file, "Creates or overwrites a file in the current project.", "risky"),
     "search_web": ToolDefinition(search_web, "Searches the web and returns structured evidence with sources.", "safe"),
@@ -66,6 +83,28 @@ AVAILABLE_TOOLS = {
     "stat_file": ToolDefinition(stat_file, "Returns metadata for a project file or directory.", "safe"),
     "checksum_file": ToolDefinition(checksum_file, "Computes a checksum for a project file.", "safe"),
     "diff_text": ToolDefinition(diff_text, "Previews a unified diff between a project file and proposed content.", "safe"),
+    "create_subagent": ToolDefinition(
+        _create_subagent_lazy,
+        "Creates a new subagent with a name, role, and optional comma-separated list of allowed tools. "
+        "Returns the agent_id needed for delegation. Use for spawning focused child agents.",
+        "safe",
+    ),
+    "delegate_task": ToolDefinition(
+        _delegate_task_lazy,
+        "Delegates a task to an existing subagent by agent_id. The subagent runs an agentic loop "
+        "with its configured tools and role. Returns the subagent's final answer.",
+        "safe",
+    ),
+    "delete_subagent": ToolDefinition(
+        _delete_subagent_lazy,
+        "Deletes a subagent by agent_id, freeing resources. Use after delegation is complete.",
+        "safe",
+    ),
+    "list_subagents": ToolDefinition(
+        _list_subagents_lazy,
+        "Lists all active subagents with their names, ids, statuses, and roles.",
+        "safe",
+    ),
 }
 
 TOOL_PROMPT = """<available_tools>
@@ -113,6 +152,22 @@ delete_file permanently deletes after user confirmation.
 23. get_time() - Returns the current system time. Permission: safe.
 24. execute_bash(command: str) - Executes a single-shot bash command on the macOS host system within a 30-second timeout. Read-only commands run automatically without prompt. Modifying commands require explicit user approval. Prefer file tools for file manipulation. Permission: conditional.
 </memory_and_system_tools>
+
+<subagent_tools>
+25. create_subagent(name: str, role: str, allowed_tools: str | null = null, max_turns: int = 10) - Creates a child subagent. Returns agent_id. Permission: safe.
+26. delegate_task(agent_id: str, task: str) - Delegates a task to a subagent. The subagent runs independently with its own tools and role. Permission: safe.
+27. delete_subagent(agent_id: str) - Removes a subagent after use. Permission: safe.
+28. list_subagents() - Lists all active subagents with status. Permission: safe.
+</subagent_tools>
+
+<subagent_workflow>
+To use subagents:
+1. create_subagent to spawn a focused child (e.g., name="reader", role="Read files", allowed_tools="read_file,list_directory")
+2. delegate_task to assign work (the subagent runs its own agentic loop)
+3. Read the result and continue your workflow
+4. delete_subagent when done to free resources
+Use subagents for parallel-safe isolated tasks: reading files, running tests, searching patterns.
+</subagent_workflow>
 </available_tools>
 
 <json_contract>
