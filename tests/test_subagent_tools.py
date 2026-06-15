@@ -99,6 +99,20 @@ class SubagentToolsTests(unittest.TestCase):
         result = delegate_task(agent_id="nonexistent", task="do stuff")
         self.assertIn("not found", result.lower())
 
+    def test_delegate_task_exception_returns_error(self):
+        create_subagent(name="reader", role="read files")
+        agent = self.registry.find_by_name("reader")
+
+        with patch("core.subagent_manager.AgenticLoop") as mock_cls:
+            mock_cls.return_value.run.side_effect = RuntimeError("LLM timeout")
+            result = delegate_task(
+                agent_id=agent.agent_id,
+                task="Read README.md",
+            )
+
+        self.assertIn("failed", result.lower())
+        self.assertIn("LLM timeout", result)
+
     def test_list_subagents_shows_status(self):
         create_subagent(name="w", role="work")
         agent = self.registry.find_by_name("w")

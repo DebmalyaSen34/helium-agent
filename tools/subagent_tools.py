@@ -71,15 +71,12 @@ def delegate_task(
 def delete_subagent(agent_id: str) -> str:
     """Delete a subagent by its agent_id."""
     manager = _get_manager()
-    try:
-        agent = manager.get_agent(agent_id)
-        if agent is None:
-            return f"Subagent with id '{agent_id}' not found."
-        name = agent.name
-        manager.delete_agent(agent_id)
-        return f"Subagent '{name}' (id={agent_id}) deleted."
-    except KeyError:
+    agent = manager.get_agent(agent_id)
+    if agent is None:
         return f"Subagent with id '{agent_id}' not found."
+    name = agent.name
+    manager.delete_agent(agent_id)
+    return f"Subagent '{name}' (id={agent_id}) deleted."
 
 
 def list_subagents() -> str:
@@ -105,6 +102,4 @@ __all__ = [
     "delegate_task",
     "delete_subagent",
     "list_subagents",
-    "_get_manager",
-    "_set_manager",
 ]
