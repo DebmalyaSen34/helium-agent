@@ -121,5 +121,122 @@ class SubagentToolsTests(unittest.TestCase):
         self.assertIn("running", result)
 
 
+class SubagentIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.registry = AgentRegistry()
+        self.manager = SubAgentManager(registry=self.registry)
+        _set_manager(self.manager)
+
+    def tearDown(self):
+        _set_manager(None)
+
+    def test_full_lifecycle_create_delegate_delete(self):
+        """End-to-end: create agent, delegate task, verify result, delete."""
+        # Step 1: Create
+        create_result = create_subagent(name="reader", role="Read files")
+        self.assertIn("created", create_result.lower())
+
+        agent = self.registry.find_by_name("reader")
+        self.assertIsNotNone(agent)
+        self.assertEqual(agent.status, SubAgentStatus.IDLE)
+
+        # Step 2: Delegate
+        mock_loop = MagicMock()
+        mock_loop.run.return_value = MagicMock(
+            final_answer="README: Helium Agent is a terminal AI agent.",
+            stop_reason="final",
+            tools_used=["read_file"],
+            observations=["file contents"],
+        )
+
+        with patch("core.subagent_manager.AgenticLoop", return_value=mock_loop):
+            delegate_result = delegate_task(
+                agent_id=agent.agent_id,
+                task="Read and summarize README.md",
+            )
+
+        self.assertIn("README", delegate_result)
+        self.assertEqual(agent.status, SubAgentStatus.COMPLETED)
+
+        # Step 3: List
+        list_result = list_subagents()
+        self.assertIn("reader", list_result)
+        self.assertIn("completed", list_result)
+
+        # Step 4: Delete
+        delete_result = delete_subagent(agent_id=agent.agent_id)
+        self.assertIn("deleted", delete_result.lower())
+        self.assertIsNone(self.registry.get(agent.agent_id))
+
+        # Step 5: Verify empty
+        final_list = list_subagents()
+        self.assertIn("No subagents", final_list)
+
+    def test_create_multiple_subagents_and_list(self):
+        create_subagent(name="reader", role="Read files")
+        create_subagent(name="writer", role="Write code")
+        create_subagent(name="tester", role="Run tests")
+
+        result = list_subagents()
+        self.assertIn("reader", result)
+        self.assertIn("writer", result)
+        self.assertIn("tester", result)
+
+        self.assertEqual(len(self.registry.list_all()), 3)
+
+    def test_delegate_to_multiple_agents_sequentially(self):
+        create_subagent(name="a", role="task a")
+        create_subagent(name="b", role="task b")
+
+        agent_a = self.registry.find_by_name("a")
+        agent_b = self.registry.find_by_name("b")
+
+        mock_loop_a = MagicMock()
+        mock_loop_a.run.return_value = MagicMock(
+            final_answer="result from a",
+            stop_reason="final",
+            tools_used=[],
+            observations=[],
+        )
+
+        mock_loop_b = MagicMock()
+        mock_loop_b.run.return_value = MagicMock(
+            final_answer="result from b",
+            stop_reason="final",
+            tools_used=[],
+            observations=[],
+        )
+
+        with patch("core.subagent_manager.AgenticLoop", return_value=mock_loop_a):
+            result_a = delegate_task(agent_id=agent_a.agent_id, task="do task a")
+
+        with patch("core.subagent_manager.AgenticLoop", return_value=mock_loop_b):
+            result_b = delegate_task(agent_id=agent_b.agent_id, task="do task b")
+
+        self.assertIn("result from a", result_a)
+        self.assertIn("result from b", result_b)
+        self.assertEqual(agent_a.status, SubAgentStatus.COMPLETED)
+        self.assertEqual(agent_b.status, SubAgentStatus.COMPLETED)
+
+    def test_cleanup_removes_finished_agents(self):
+        create_subagent(name="a", role="r1")
+        create_subagent(name="b", role="r2")
+        create_subagent(name="c", role="r3")
+
+        a = self.registry.find_by_name("a")
+        b = self.registry.find_by_name("b")
+        c = self.registry.find_by_name("c")
+
+        a.status = SubAgentStatus.COMPLETED
+        b.status = SubAgentStatus.RUNNING
+        c.status = SubAgentStatus.FAILED
+
+        removed = self.manager.cleanup_completed()
+        self.assertEqual(len(removed), 2)
+        self.assertIn(a.agent_id, removed)
+        self.assertIn(c.agent_id, removed)
+        self.assertIsNotNone(self.registry.get(b.agent_id))
+
+
 if __name__ == "__main__":
     unittest.main()
