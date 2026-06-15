@@ -22,8 +22,13 @@ class Triplet:
     object: str
 
 class KnowledgeGraph:
-    def __init__(self, db_path: str = "memory.db"):
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+    def __init__(self, conn: Optional[sqlite3.Connection] = None, db_path: str = "memory.db"):
+        if conn is not None:
+            self.conn = conn
+            self._owns_conn = False
+        else:
+            self.conn = sqlite3.connect(db_path, check_same_thread=False)
+            self._owns_conn = True
         self._init_db()
 
     def _init_db(self):
@@ -147,3 +152,23 @@ class KnowledgeGraph:
             return ""
         
         return "\n".join([f"{s} {p} {o}" for s, p, o in relevant_triplets])
+
+    def query_entity(self, name: str) -> List[Dict[str, str]]:
+        """Return all triplets where the entity appears as subject or object."""
+        name_lower = name.lower()
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+                SELECT s.name, t.predicate, o.name
+                FROM Triplets t
+                JOIN Entities s ON t.subject_id = s.id
+                JOIN Entities o ON t.object_id = o.id
+                WHERE s.name = ? OR o.name = ?
+                ORDER BY t.timestamp DESC
+            """, (name_lower, name_lower)
+        )
+        return [
+            {"subject": row[0], "predicate": row[1], "object": row[2],
+             "confidence": 1.0, "source": "stored"}
+            for row in cursor.fetchall()
+        ]
