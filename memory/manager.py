@@ -46,11 +46,14 @@ class PersistentMemoryManager:
 
         keywords = self._extract_keywords(query)
         for kw in keywords:
-            for triplet in self.graph.query_entity(kw):
-                line = f"{triplet['subject']} {triplet['predicate']} {triplet['object']}"
-                if line not in seen:
-                    seen.add(line)
-                    combined.append((line, triplet.get("confidence", 1.0)))
+            try:
+                for triplet in self.graph.query_entity(kw):
+                    line = f"{triplet['subject']} {triplet['predicate']} {triplet['object']}"
+                    if line not in seen:
+                        seen.add(line)
+                        combined.append((line, triplet.get("confidence", 1.0)))
+            except Exception as e:
+                logger.warning(f"Graph query failed for '{kw}': {e}")
 
         combined.sort(key=lambda x: x[1], reverse=True)
         return [content for content, _ in combined[:max_results]]
@@ -80,21 +83,40 @@ class PersistentMemoryManager:
         self.conversation.store_session_context(self.flat_store, session_id)
         self.conversation.prune()
 
+    def close(self):
+        """Close the shared database connection."""
+        self.conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     # -- internals -----------------------------------------------------------
 
     def _extract_and_store_triplets(self, text):
-        """Extract SPO triplets from text and store them in the graph."""
-        keywords = self._extract_keywords(text)
+        """Extract SPO triplets from text and store them in the graph.
+        Only generates triplets when the spaCy path succeeds."""
+        try:
+            keywords = self._extract_keywords(text, _raise_on_fallback=True)
+        except (AttributeError, RuntimeError, OSError) as e:
+            logger.warning(f"Triplet extraction skipped, spaCy unavailable: {e}")
+            return
         if len(keywords) < 2:
             return
         facts = [{"s": keywords[0], "p": "related_to", "o": kw} for kw in keywords[1:]]
         self.graph.add_knowledge(facts)
 
-    def _extract_keywords(self, text):
-        """Extract keywords, falling back to simple split if spaCy is unavailable."""
+    def _extract_keywords(self, text, _raise_on_fallback=False):
+        """Extract keywords, falling back to simple split if spaCy is unavailable.
+        If _raise_on_fallback=True, re-raises the exception instead of falling back."""
         try:
             return self.graph._extract_keywords(text)
-        except Exception:
+        except (AttributeError, RuntimeError, OSError) as e:
+            if _raise_on_fallback:
+                raise
+            logger.warning(f"Keyword extraction failed, using fallback: {e}")
             return [w.lower() for w in text.split() if len(w) > 3]
 
     def _load_recent_summary(self):
