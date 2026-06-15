@@ -54,6 +54,18 @@ class ConversationStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.append("s1", "system", "bad")
 
+    def test_append_none_session_id_raises(self):
+        with self.assertRaises(ValueError):
+            self.store.append(None, "user", "hello")
+
+    def test_append_empty_session_id_raises(self):
+        with self.assertRaises(ValueError):
+            self.store.append("", "user", "hello")
+
+    def test_append_whitespace_session_id_raises(self):
+        with self.assertRaises(ValueError):
+            self.store.append("   ", "user", "hello")
+
     def test_append_multiple_turns(self):
         self.store.append("s1", "user", "q1")
         self.store.append("s1", "assistant", "a1")
@@ -122,44 +134,56 @@ class ConversationStoreTests(unittest.TestCase):
         result = self.store.get_recent("s1", n=20)
         self.assertEqual(len(result), 1)
 
-    # --- summarize_and_store ---
+    def test_get_recent_n_zero_returns_one(self):
+        for i in range(5):
+            self.store.append("s1", "user", f"msg{i}")
+        result = self.store.get_recent("s1", n=0)
+        self.assertEqual(len(result), 1)
 
-    def test_summarize_and_store_returns_id(self):
+    def test_get_recent_n_negative_returns_one(self):
+        for i in range(5):
+            self.store.append("s1", "user", f"msg{i}")
+        result = self.store.get_recent("s1", n=-1)
+        self.assertEqual(len(result), 1)
+
+    # --- store_session_context ---
+
+    def test_store_session_context_returns_id(self):
         mem_store = FlatMemoryStore(self.conn)
         self.store.append("s1", "user", "What is Python?")
         self.store.append("s1", "assistant", "A programming language.")
-        rid = self.store.summarize_and_store(mem_store, "s1")
+        rid = self.store.store_session_context(mem_store, "s1")
         self.assertIsInstance(rid, int)
         self.assertGreater(rid, 0)
 
-    def test_summarize_and_store_content_format(self):
+    def test_store_session_context_content_format(self):
         mem_store = FlatMemoryStore(self.conn)
         self.store.append("s1", "user", "hi")
         self.store.append("s1", "assistant", "hello")
-        rid = self.store.summarize_and_store(mem_store, "s1")
+        rid = self.store.store_session_context(mem_store, "s1")
         mem = mem_store.get_by_id(rid)
         self.assertIn("User: hi", mem["content"])
         self.assertIn("Assistant: hello", mem["content"])
-        self.assertTrue(mem["content"].startswith("Session summary:"))
+        self.assertTrue(mem["content"].startswith("Session context:"))
 
-    def test_summarize_and_store_tags_and_category(self):
+    def test_store_session_context_tags_and_category(self):
         mem_store = FlatMemoryStore(self.conn)
         self.store.append("s1", "user", "test")
-        rid = self.store.summarize_and_store(mem_store, "s1")
+        rid = self.store.store_session_context(mem_store, "s1")
         mem = mem_store.get_by_id(rid)
         self.assertEqual(mem["category"], "project")
         self.assertEqual(mem["tags"], "session-summary")
 
-    def test_summarize_and_store_empty_session(self):
+    def test_store_session_context_empty_session(self):
         mem_store = FlatMemoryStore(self.conn)
-        result = self.store.summarize_and_store(mem_store, "nonexistent")
+        result = self.store.store_session_context(mem_store, "nonexistent")
         self.assertIsNone(result)
 
-    def test_summarize_and_store_limit_20(self):
+    def test_store_session_context_limit_20(self):
         mem_store = FlatMemoryStore(self.conn)
         for i in range(25):
             self.store.append("s1", "user", f"msg{i}")
-        rid = self.store.summarize_and_store(mem_store, "s1")
+        rid = self.store.store_session_context(mem_store, "s1")
         mem = mem_store.get_by_id(rid)
         # Should not contain msg0-msg4 (only last 20)
         self.assertNotIn("msg0", mem["content"])

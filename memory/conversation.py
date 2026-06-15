@@ -23,6 +23,10 @@ class ConversationStore:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_threads_session "
+            "ON conversation_threads(session_id, id)"
+        )
         self.conn.commit()
 
     def append(self, session_id, role, content):
@@ -33,6 +37,9 @@ class ConversationStore:
             role: Either 'user' or 'assistant'.
             content: The message text.
         """
+        if not session_id or not isinstance(session_id, str) or not session_id.strip():
+            raise ValueError("session_id must be a non-empty string.")
+
         if role not in ('user', 'assistant'):
             raise ValueError(f"Invalid role: {role}. Must be 'user' or 'assistant'.")
 
@@ -50,6 +57,7 @@ class ConversationStore:
             session_id: Session identifier string.
             n: Number of turns to return (default 20).
         """
+        n = max(n, 1)
         rows = self.conn.execute(
             "SELECT id, session_id, role, content, created_at "
             "FROM conversation_threads WHERE session_id = ? "
@@ -66,26 +74,28 @@ class ConversationStore:
             for r in reversed(rows)
         ]
 
-    def summarize_and_store(self, memory_store, session_id):
-        """Summarize last 20 turns and store as a memory.
+    def store_session_context(self, memory_store, session_id):
+        """Format and store the last 20 turns as a memory entry.
+
+        Concatenates recent turns verbatim (no LLM summarization).
+        Stored content is a plain "Role: text" listing for context retrieval.
 
         Args:
-            memory_store: A FlatMemoryStore instance to persist the summary.
+            memory_store: A FlatMemoryStore instance to persist the formatted turns.
             session_id: Session identifier string.
         """
         turns = self.get_recent(session_id, n=20)
         if not turns:
             return None
 
-        # Pair turns as "User: X / Assistant: Y" lines
         lines = []
         for turn in turns:
             lines.append(f"{turn['role'].capitalize()}: {turn['content']}")
 
-        summary = "Session summary:\n" + "\n".join(lines)
+        content = "Session context:\n" + "\n".join(lines)
 
         return memory_store.add(
-            content=summary,
+            content=content,
             category='project',
             tags='session-summary'
         )
