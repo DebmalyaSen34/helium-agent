@@ -86,7 +86,8 @@ class FlatMemoryStore:
 
         Scoring: fts_rank * importance * (1 + log(access_count + 1))
         """
-        # Escape FTS5 special chars and tokenize
+        # Escape FTS5 special chars — wrapping in double quotes forces literal
+        # interpretation, neutralizing *, AND, OR, NOT, NEAR, col:, and parens.
         sanitized = query.replace('"', '""')
         # Wrap each word as a prefix token for flexible matching
         tokens = sanitized.split()
@@ -127,11 +128,16 @@ class FlatMemoryStore:
 
         results.sort(key=lambda r: r['score'], reverse=True)
 
-        # Touch accessed memories
-        for r in results[:limit]:
-            self._touch(r['id'])
+        # Batch-touch accessed memories
+        top = results[:limit]
+        if top:
+            self.conn.executemany(
+                "UPDATE memories SET access_count = access_count + 1, last_accessed = CURRENT_TIMESTAMP WHERE id = ?",
+                [(r['id'],) for r in top]
+            )
+            self.conn.commit()
 
-        return results[:limit]
+        return top
 
     def forget(self, identifier):
         """Delete a memory by id (int) or by content match (str).
@@ -147,6 +153,8 @@ class FlatMemoryStore:
 
     def list_all(self, category=None):
         """List all memories, optionally filtered by category."""
+        if category and category not in VALID_CATEGORIES:
+            raise ValueError(f"Invalid category: {category}. Must be one of {VALID_CATEGORIES}")
         if category:
             rows = self.conn.execute(
                 "SELECT id, content, category, tags, importance, access_count, created_at, last_accessed "
