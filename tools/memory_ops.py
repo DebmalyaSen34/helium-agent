@@ -85,13 +85,21 @@ _CATEGORY_MAP = {
 
 
 def initialize_session() -> None:
-    """Start a fresh session backed by PersistentMemoryManager (in-memory)."""
+    """Start a fresh session backed by PersistentMemoryManager (in-memory).
+
+    Note: shutdown() should be called on process exit to persist session data.
+    Will be wired in Task 9 via main.py atexit/signal handling.
+    """
     from memory.manager import PersistentMemoryManager
 
     global _manager
     _manager = PersistentMemoryManager(":memory:")
-    _manager.startup()
-    logger.info("Session memory initialized (PersistentMemoryManager, in-memory).")
+    session_id, _context = _manager.startup()
+    _manager.session_id = session_id
+    logger.info(
+        "Session memory initialized (PersistentMemoryManager, in-memory) session_id=%s.",
+        session_id,
+    )
 
 
 def _infer_category(fact: str, category: str | None) -> str:
@@ -107,9 +115,17 @@ def _infer_category(fact: str, category: str | None) -> str:
 
 def remember_fact(fact: str, category: str | None = None) -> str:
     """Saves a fact or preference into structured session-scoped memory."""
+    if _manager is None:
+        return "Error: Session not initialized. Call initialize_session() first."
+
     fact = fact.strip()
     if not fact:
         return "Error: Fact cannot be empty."
+
+    # Deduplicate: check if the fact already exists in the flat store
+    existing = _manager.flat_store.search(fact, limit=1)
+    if existing and existing[0]["content"].lower() == fact.lower():
+        return f"Already remembered: {fact}"
 
     target_category = _infer_category(fact, category)
     try:
@@ -122,6 +138,9 @@ def remember_fact(fact: str, category: str | None = None) -> str:
 
 def retrieve_facts(category: str | None = None) -> str:
     """Retrieves saved session memories."""
+    if _manager is None:
+        return "Error: Session not initialized. Call initialize_session() first."
+
     try:
         mapped = _CATEGORY_MAP.get(category) if category else None
         rows = _manager.flat_store.list_all(category=mapped)
@@ -153,6 +172,10 @@ def retrieve_facts(category: str | None = None) -> str:
 
 def get_relevant_memories(query: str) -> list[str]:
     """Finds memories relevant to the user query via FTS + graph lookup."""
+    if _manager is None:
+        logger.warning("get_relevant_memories called before session initialized.")
+        return []
+
     try:
         return _manager.retrieve(query)
     except Exception as e:
