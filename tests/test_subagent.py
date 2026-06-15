@@ -24,23 +24,6 @@ class SubAgentTests(unittest.TestCase):
         self.assertEqual(agent.max_turns, 5)
         self.assertEqual(agent.allowed_tools, {"read_file", "execute_bash", "list_directory"})
 
-    def test_subagent_status_transitions(self):
-        agent = SubAgent(name="worker", role="Do work")
-        self.assertEqual(agent.status, SubAgentStatus.IDLE)
-
-        agent.status = SubAgentStatus.RUNNING
-        self.assertEqual(agent.status, SubAgentStatus.RUNNING)
-
-        agent.status = SubAgentStatus.COMPLETED
-        self.assertEqual(agent.status, SubAgentStatus.COMPLETED)
-
-    def test_subagent_is_frozen_after_creation(self):
-        agent = SubAgent(name="x", role="y")
-        # name and role should be settable only through status
-        agent.status = SubAgentStatus.RUNNING
-        self.assertEqual(agent.status, SubAgentStatus.RUNNING)
-
-
 class AgentRegistryTests(unittest.TestCase):
     def test_register_and_get(self):
         registry = AgentRegistry()

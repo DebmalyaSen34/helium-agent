@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import uuid
+from uuid import uuid4
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-class SubAgentStatus(Enum):
+
+
+class SubAgentStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -16,7 +18,7 @@ class SubAgentStatus(Enum):
 class SubAgent:
     name: str
     role: str
-    agent_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    agent_id: str = field(default_factory=lambda: uuid4().hex[:12])
     status: SubAgentStatus = SubAgentStatus.IDLE
     parent_id: str | None = None
     max_turns: int = 10
@@ -52,3 +54,6 @@ class AgentRegistry:
 
     def list_children(self, parent_id: str) -> list[SubAgent]:
         return [a for a in self._agents.values() if a.parent_id == parent_id]
+
+
+__all__ = ["SubAgent", "SubAgentStatus", "AgentRegistry"]
