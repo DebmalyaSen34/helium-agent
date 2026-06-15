@@ -249,6 +249,7 @@ SPEECH_SETTINGS = SETTINGS["speech"]
 ASSISTANT_SETTINGS = SETTINGS["assistant"]
 ASSISTANT_PERSONA = str(ASSISTANT_SETTINGS.get("persona", DEFAULT_SETTINGS["assistant"]["persona"])).strip()
 MEMORY_FILE = BASE_DIR / "memory.json"
+MEMORY_DB = BASE_DIR / "memory.db"
 COMMAND_HISTORY_FILE = BASE_DIR / "command_history.json"
 BROWSER_SETTINGS = SETTINGS.get("browser", DEFAULT_SETTINGS["browser"])
 
