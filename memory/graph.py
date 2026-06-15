@@ -95,11 +95,11 @@ class KnowledgeGraph:
 
             if subject and predicate and object_:
                 return Triplet(subject, predicate, object_)
-        except Exception as e:
+        except KeyError as e:
             logger.error(f"Error parsing fact: {fact}. Error: {e}")
             return None
         
-    def _get_or_create_entity(self, cursor: sqlite3.Cursor, name: str) -> int | None:
+    def _get_or_create_entity(self, cursor: sqlite3.Cursor, name: str) -> Optional[int]:
         cursor.execute("SELECT id FROM Entities WHERE name = ?", (name,))
         result = cursor.fetchone()
         if result:
@@ -153,7 +153,7 @@ class KnowledgeGraph:
         
         return "\n".join([f"{s} {p} {o}" for s, p, o in relevant_triplets])
 
-    def query_entity(self, name: str) -> List[Dict[str, str]]:
+    def query_entity(self, name: str, limit: int = 50) -> List[Dict[str, str]]:
         """Return all triplets where the entity appears as subject or object."""
         name_lower = name.lower()
         cursor = self.conn.cursor()
@@ -165,10 +165,23 @@ class KnowledgeGraph:
                 JOIN Entities o ON t.object_id = o.id
                 WHERE s.name = ? OR o.name = ?
                 ORDER BY t.timestamp DESC
-            """, (name_lower, name_lower)
+                LIMIT ?
+            """, (name_lower, name_lower, limit)
         )
         return [
             {"subject": row[0], "predicate": row[1], "object": row[2],
              "confidence": 1.0, "source": "stored"}
             for row in cursor.fetchall()
         ]
+
+    def close(self):
+        """Close the connection only if this instance owns it."""
+        if self._owns_conn:
+            self.conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
