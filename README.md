@@ -2,6 +2,10 @@
 
 # Helium Agent
 
+## Demo
+
+**[Watch the demo video →](https://youtu.be/JUzYe-BmOa0)**
+
 Helium is a lightweight local AI agent that does everything your everyday agent does but without the massive bill and with your own customization. You can run any LLM be it local or cloud inside Helium. But to have the total experience of freedom I would suggest to integrate a local LLM either using ollama, llama.cpp or any inference technology of your choice.
 
 Helium is still developing and more features are added as you read this. I would really love for you to contribute to this and make a part of Helium your own.
