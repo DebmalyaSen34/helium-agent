@@ -15,12 +15,23 @@ def is_under(path: Path, root: Path) -> bool:
 
 
 def validate_one_file_path(file_path: Path, config: RagServiceConfig) -> ValidationResult:
-    candidate = file_path.expanduser()
-    if not candidate.is_absolute():
-        candidate = Path.cwd() / candidate
-    candidate = candidate.resolve()
+    user_path = file_path
+    if not user_path.parts or user_path == Path("."):
+        raise RagError("missing_file_path", "Attachment path must be a non-empty relative path.")
+    if user_path.is_absolute() or user_path.anchor:
+        raise RagError("outside_safe_roots", "Attachment path must be relative to a configured safe root.")
+    if any(part == ".." for part in user_path.parts):
+        raise RagError("outside_safe_roots", "Attachment path cannot contain parent-directory traversal.")
 
-    if not any(is_under(candidate, safe_root) for safe_root in config.safe_roots):
+    candidate: Path | None = None
+    for safe_root in config.safe_roots:
+        resolved_root = safe_root.resolve()
+        resolved_candidate = (resolved_root / user_path).resolve()
+        if is_under(resolved_candidate, resolved_root):
+            candidate = resolved_candidate
+            break
+
+    if candidate is None:
         raise RagError("outside_safe_roots", "Attachment path is outside configured safe roots.")
 
     if not candidate.exists() or not candidate.is_file():

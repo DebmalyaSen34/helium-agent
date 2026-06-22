@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from rag_service.service import RagEvidenceService
 
 
 app = FastAPI(title="Jarvis RAG Service", version="0.1.0")
+logger = logging.getLogger(__name__)
 _service: RagEvidenceService | None = None
 
 
@@ -49,6 +51,7 @@ def evidence_for_path(payload: dict[str, Any]) -> JSONResponse:
     except RagError as exc:
         return JSONResponse(status_code=400, content={"ok": False, "error": {"code": exc.code, "message": exc.message}})
     except Exception as exc:
-        return JSONResponse(status_code=500, content={"ok": False, "error": {"code": "rag_service_error", "message": str(exc)}})
+        logger.exception("Unhandled error while building evidence for path", exc_info=exc)
+        return JSONResponse(status_code=500, content={"ok": False, "error": {"code": "rag_service_error", "message": "An internal error has occurred."}})
 
     return JSONResponse(content={"ok": True, "evidence": pack.to_dict()})
