@@ -33,6 +33,7 @@ from rich.logging import RichHandler
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
@@ -267,6 +268,53 @@ def stdin_pressed() -> bool:
     return True
 
 
+def _format_confirm_args(tool_name: str, args: dict) -> list:
+    """Build rich renderables for tool args — syntax-highlighted where possible."""
+    renderables = []
+
+    # ── file content tools ─────────────────────────────────────
+    if tool_name in ("write_file", "create_file") and "content" in args:
+        path = args.get("path") or args.get("filename", "file")
+        ext = Path(path).suffix.lstrip(".")
+        lang = ext if ext else "text"
+        renderables.append(Text(f"path: {path}", style="dim"))
+        renderables.append(Syntax(args["content"], lang, theme="monokai",
+                                  line_numbers=True, word_wrap=True))
+
+    elif tool_name == "append_file" and "content" in args:
+        path = args.get("path", "file")
+        renderables.append(Text(f"path: {path}  (append)", style="dim"))
+        renderables.append(Syntax(args["content"], Path(path).suffix.lstrip(".") or "text",
+                                  theme="monokai", line_numbers=True, word_wrap=True))
+
+    elif tool_name == "replace_text" and "old" in args and "new" in args:
+        path = args.get("path", "file")
+        renderables.append(Text(f"path: {path}", style="dim"))
+        renderables.append(Text("─ old ─", style="bold red"))
+        renderables.append(Syntax(args["old"], "text", theme="monokai", word_wrap=True))
+        renderables.append(Text("─ new ─", style="bold green"))
+        renderables.append(Syntax(args["new"], "text", theme="monokai", word_wrap=True))
+
+    elif tool_name == "patch_file" and "patch" in args:
+        path = args.get("path", "file")
+        renderables.append(Text(f"path: {path}", style="dim"))
+        renderables.append(Syntax(args["patch"], "diff", theme="monokai", word_wrap=True))
+
+    # ── bash ───────────────────────────────────────────────────
+    elif tool_name == "execute_bash" and "command" in args:
+        renderables.append(Syntax(args["command"], "bash", theme="monokai", word_wrap=True))
+
+    # ── anything else — clean key: value ───────────────────────
+    else:
+        for key, val in args.items():
+            t = Text()
+            t.append(f"{key}: ", style="dim")
+            t.append(str(val))
+            renderables.append(t)
+
+    return renderables
+
+
 def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     if not ASSISTANT_SETTINGS.get("confirm_risky_tools", True):
         return True
@@ -276,13 +324,12 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
         _active_status.stop()
 
     try:
-        body = Text()
-        body.append("Tool: ", style="dim")
-        body.append(tool_name, style="bold")
-        body.append("\nPermission: ", style="dim")
-        body.append(permission, style="yellow")
-        body.append("\nArgs: ", style="dim")
-        body.append(repr(args))
+        header = Text()
+        header.append("Tool: ", style="dim")
+        header.append(tool_name, style="bold")
+        header.append("   Permission: ", style="dim")
+        header.append(permission, style="yellow")
+        body = Group(header, *_format_confirm_args(tool_name, args))
         console.print(app_panel(body, title="Confirm Tool", border_style="yellow"))
         answer = Prompt.ask("Allow tool?", choices=["y", "n"], default="n")
     finally:
