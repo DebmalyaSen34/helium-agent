@@ -10,8 +10,11 @@ from dotenv import dotenv_values
 
 try:
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
-    tomllib = None
+except ModuleNotFoundError:  # Python < 3.11 fallback
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:  # pragma: no cover
+        tomllib = None
 
 try:
     from platformdirs import user_config_dir

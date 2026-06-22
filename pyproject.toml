@@ -20,7 +20,8 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "playwright",
-    "platformdirs"
+    "platformdirs",
+    "tomli; python_version < '3.11'"
 ]
 
 [project.scripts]
