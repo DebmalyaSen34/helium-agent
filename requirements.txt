@@ -7,3 +7,4 @@ fastapi
 uvicorn[standard]
 playwright
 prompt-toolkit
+spacy

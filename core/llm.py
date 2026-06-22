@@ -209,7 +209,7 @@ def stream_openrouter_response(payload: dict, *, api_url: str | None = None, api
             continue
 
 
-def build_system_prompt(prompt: str) -> str:
+def build_system_prompt(prompt: str, skills: list[Any] | None = None) -> str:
     from tools.memory_ops import get_relevant_memories
 
     now = datetime.now().strftime("%B %d, %Y")
@@ -219,6 +219,17 @@ def build_system_prompt(prompt: str) -> str:
         f"{TOOL_PROMPT}\n\n"
         f"Today's Date: {now}"
     )
+
+    # Inject model-invoked (contextual) skills into system prompt
+    if skills:
+        contextual = [s for s in skills if not s.is_slash_command]
+        if contextual:
+            lines = []
+            for s in contextual:
+                hint = f" (trigger: {s.trigger})" if s.trigger else ""
+                lines.append(f"- {s.name}{hint}: {s.description}")
+            skills_text = "\n".join(lines)
+            system_content += f"\n\n=== AVAILABLE SKILLS ===\n{skills_text}\n========================"
 
     memories = get_relevant_memories(prompt)
     if memories:
@@ -304,6 +315,7 @@ def generate_response(
     on_metrics: Callable[[dict[str, Any]], None] | None = None,
     on_tool_result: Callable[[str, str], None] | None = None,
     print_metrics: bool = True,
+    skills: list[Any] | None = None,
 ):
 
     global conversation_history
@@ -319,7 +331,7 @@ def generate_response(
         on_state("Thinking")
 
     try:
-        system_prompt = build_system_prompt(prompt)
+        system_prompt = build_system_prompt(prompt, skills=skills)
         think_end = time.time()
 
         def ask_model(loop_messages: list[dict[str, str]]) -> str:

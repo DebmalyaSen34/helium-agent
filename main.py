@@ -41,6 +41,8 @@ from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTI
 from core.llm import generate_response
 from core.coding_workflow import run_coding_workflow
 from tools.research.pipeline import research_query
+from skills.loader import Skill, discover_skills, match_skill_trigger
+from skills.manager import list_skills as format_skill_list, create_skill, remove_skill
 from config.runtime_config import (
     RuntimeConfigError,
     import_legacy_runtime_config,
@@ -339,8 +341,17 @@ def parse_deep_research_command(user_text: str) -> str | None:
 def parse_help_command(user_text: str) -> bool:
     return user_text.strip() == "/help"
 
-def build_help_text() -> str:
-    return """# Helium Help
+def build_help_text(discovered_skills: list[Skill] | None = None) -> str:
+    skill_lines = ""
+    if discovered_skills:
+        slash_skills = [s for s in discovered_skills if s.trigger]
+        if slash_skills:
+            skill_lines = "\n" + "\n".join(
+                f"- `{s.trigger}` - {s.description[:60]}" for s in slash_skills
+            )
+        skill_lines += "\n- `/skills` - List, create, or remove skills.\n"
+
+    return f"""# Helium Help
 
 Helium is a local AI assistant for everyday questions, deep research, file-aware chat, and agentic coding.
 
@@ -351,6 +362,8 @@ Helium is a local AI assistant for everyday questions, deep research, file-aware
 - `/deep-research <task>` - Run the deep research pipeline directly with multi-source evidence.
 - `@path/to/file <question>` - Attach one local file for RAG-backed answers.
 - `quit`, `exit`, or `stop` - End the current text session.
+{skill_lines}
+## What You Can Ask
 
 ## What You Can Ask
 
@@ -454,12 +467,144 @@ def handle_deep_research_command(user_text: str) -> bool:
     print_chat_message("Helium", result, style="cyan", markdown=True)
     return True
 
-def handle_help_command(user_text: str) -> bool:
+def handle_help_command(user_text: str, discovered_skills: list[Skill] | None = None) -> bool:
     if not parse_help_command(user_text):
         return False
 
-    print_chat_message("Helium", build_help_text(), style="cyan", markdown=True)
+    print_chat_message("Helium", build_help_text(discovered_skills), style="cyan", markdown=True)
     return True
+
+
+def handle_skill_management_command(user_text: str, workspace: Path, discovered_skills: list[Skill]) -> bool:
+    """Handle /skills management commands. Returns True if consumed."""
+    stripped = user_text.strip()
+    if not stripped.startswith("/skills"):
+        return False
+
+    parts = stripped.split(maxsplit=2)
+    subcmd = parts[1] if len(parts) > 1 else "list"
+
+    if subcmd == "list":
+        format_skill_list(discovered_skills)
+        return True
+
+    if subcmd == "create":
+        if len(parts) < 3 or not parts[2].strip():
+            print_chat_message("Helium", "Usage: /skills create <name>", style="cyan")
+            return True
+        name = parts[2].strip().lower().replace(" ", "-")
+        path = create_skill(name, workspace)
+        # Refresh the cached skill list
+        discovered_skills.clear()
+        discovered_skills.extend(discover_skills(workspace))
+        print_chat_message("Helium", f"Created skill [bold]{name}[/bold] at `{path}`\nEdit the SKILL.md to customize it.", style="cyan")
+        return True
+
+    if subcmd == "remove":
+        if len(parts) < 3 or not parts[2].strip():
+            print_chat_message("Helium", "Usage: /skills remove <name>", style="cyan")
+            return True
+        name = parts[2].strip()
+        ok, msg = remove_skill(name, workspace)
+        if ok:
+            # Refresh the cached skill list
+            discovered_skills.clear()
+            discovered_skills.extend(discover_skills(workspace))
+        style = "green" if ok else "red"
+        print_chat_message("Helium", msg, style=style)
+        return True
+
+    if subcmd == "help":
+        help_text = """# Skills Help
+
+- `/skills` - List all installed skills
+- `/skills create <name>` - Create a new skill scaffold
+- `/skills remove <name>` - Remove a skill
+- `/skills help` - Show this help
+
+Skills are SKILL.md files with YAML frontmatter.
+Place them in `~/.config/helium-agent/skills/<name>/SKILL.md` (user) or `.helium/skills/<name>/SKILL.md` (project).
+"""
+        print_chat_message("Helium", help_text, style="cyan", markdown=True)
+        return True
+
+    print_chat_message("Helium", f"Unknown /skills subcommand: [bold]{subcmd}[/bold]. Try `/skills help`.", style="cyan")
+    return True
+
+
+def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None:
+    """Run a skill by injecting its body into the system prompt and running the agentic loop."""
+    set_state(f"Skill: {skill.name}")
+
+    from core.llm import call_llm_once, execute_agent_tool, AgenticLoop
+    from config.settings import ASSISTANT_PERSONA
+    from tools.registry import TOOL_PROMPT
+    import time
+
+    # Build skill-augmented system prompt
+    system_prompt = (
+        f"{ASSISTANT_PERSONA}\n\n"
+        f"{TOOL_PROMPT}\n\n"
+        f"<skill name=\"{skill.name}\">\n{skill.body}\n</skill>\n\n"
+    )
+
+    if skill.argument_hint:
+        system_prompt += f"Argument hint: {skill.argument_hint}\n\n"
+
+    if skill.allowed_tools:
+        tools_list = ", ".join(skill.allowed_tools)
+        system_prompt += f"Pre-approved tools for this skill: {tools_list}\n\n"
+
+    user_prompt = args if args else f"Run the /{skill.name} skill."
+
+    # Run agentic loop
+    from core.llm import conversation_history, MAX_AGENTIC_TURNS, MAX_HISTORY
+
+    token_count = 0
+
+    def ask_model(loop_messages):
+        nonlocal token_count
+        reply_text, tokens = call_llm_once(loop_messages)
+        token_count += tokens
+        return reply_text
+
+    def run_tool(action, confirm_tool=None):
+        tool_name = str(action.get("tool", "unknown"))
+        if skill.allowed_tools and tool_name not in skill.allowed_tools:
+            return f"Tool '{tool_name}' is not allowed for this skill. Allowed: {', '.join(skill.allowed_tools)}"
+        return execute_agent_tool(action, confirm_tool=confirm_tool)
+
+    start = time.time()
+    loop = AgenticLoop(
+        ask_model=ask_model,
+        execute_tool_call=run_tool,
+        max_turns=MAX_AGENTIC_TURNS,
+    )
+    loop_result = loop.run(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        history=conversation_history,
+        confirm_tool=confirm_tool,
+    )
+    reply = loop_result.final_answer
+
+    # Save to conversation history
+    conversation_history.append({"role": "user", "content": user_prompt})
+    conversation_history.append({"role": "assistant", "content": reply})
+    if len(conversation_history) > MAX_HISTORY:
+        conversation_history[:] = conversation_history[-MAX_HISTORY:]
+
+    if reply:
+        print_chat_message("Helium", reply, style="cyan", markdown=True)
+
+    elapsed = time.time() - start
+    metrics = {
+        "tokens": token_count,
+        "time": round(elapsed, 2),
+        "tools": loop_result.tools_used,
+    }
+    print_metrics(metrics)
+
 
 def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
     normalized = user_text.strip().lower()
@@ -608,11 +753,24 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
 
     if mode == "text":
         print_header("text")
+
+        # Discover skills from user and project directories
+        discovered_skills = discover_skills(workspace)
+        if discovered_skills:
+            slash_count = sum(1 for s in discovered_skills if s.trigger)
+            ctx_count = len(discovered_skills) - slash_count
+            parts = []
+            if slash_count:
+                parts.append(f"{slash_count} slash command{'s' if slash_count != 1 else ''}")
+            if ctx_count:
+                parts.append(f"{ctx_count} contextual skill{'s' if ctx_count != 1 else ''}")
+            console.print(f"[dim]:: [Skills] Loaded {' + '.join(parts)}.[/dim]")
+
         console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
-        
+
         prompt_session = PromptSession(
             history=FileHistory(".helium_history"),
-            completer=WorkspaceFileCompleter(),
+            completer=WorkspaceFileCompleter(skills=discovered_skills),
             complete_while_typing=True
         )
         
@@ -627,7 +785,15 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
 
                 reset_state()
                 record_command(user_text)
-                if handle_help_command(user_text):
+                if handle_skill_management_command(user_text, workspace, discovered_skills):
+                    continue
+                if handle_help_command(user_text, discovered_skills):
+                    continue
+                # Check for skill trigger match
+                skill_match = match_skill_trigger(user_text, discovered_skills)
+                if skill_match:
+                    skill, skill_args = skill_match
+                    invoke_skill(skill, skill_args, confirm_tool, workspace)
                     continue
                 if handle_code_command(user_text, confirm_tool=confirm_tool):
                     continue
@@ -668,6 +834,7 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
                             on_metrics=metrics.update,
                             on_tool_result=collect_tool_result,
                             print_metrics=False,
+                            skills=discovered_skills,
                         )
                         reply_list = list(reply_generator)
                     finally:
