@@ -2,15 +2,14 @@ name: Publish to PyPI
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
   build-n-publish:
     name: Build and publish Python distribution
     runs-on: ubuntu-latest
     permissions:
-      # Required for PyPI Trusted Publishing / OIDC
       id-token: write
       contents: read
 
@@ -22,6 +21,40 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Check if version already exists on PyPI
+        id: version_check
+        run: |
+          # Extract version from pyproject.toml
+          LOCAL_VERSION=$(python -c "
+          import re
+          with open('pyproject.toml') as f:
+              match = re.search(r'version\s*=\s*\"(.+?)\"', f.read())
+              print(match.group(1))
+          ")
+          echo "local_version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Local version: $LOCAL_VERSION"
+
+          # Query PyPI for existing versions
+          HTTP_STATUS=$(curl -s -o /tmp/pypi_response.json -w "%{http_code}" \
+            "https://pypi.org/pypi/helium-agent/json")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            PYPI_VERSION=$(python -c "
+          import json
+          with open('/tmp/pypi_response.json') as f:
+              print(json.load(f)['info']['version'])
+          ")
+            echo "pypi_version=$PYPI_VERSION" >> "$GITHUB_OUTPUT"
+            echo "PyPI version: $PYPI_VERSION"
+
+            if [ "$LOCAL_VERSION" = "$PYPI_VERSION" ]; then
+              echo "::error::Version $LOCAL_VERSION already exists on PyPI. Bump the version in pyproject.toml before publishing."
+              exit 1
+            fi
+          else
+            echo "Package not yet on PyPI (HTTP $HTTP_STATUS). Proceeding with first publish."
+          fi
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
