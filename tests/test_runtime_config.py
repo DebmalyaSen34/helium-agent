@@ -129,3 +129,18 @@ def test_default_settings_do_not_depend_on_legacy_env_loader():
 
     assert hasattr(settings, "SETTINGS")
     assert not hasattr(settings, "GLOBAL_HELIUM_ENV")
+
+
+def test_update_changes_one_value_and_keeps_the_rest(tmp_path, monkeypatch):
+    for name in ("LLM_API_KEY", "LLM_API_URL", "LLM_MODEL", "USE_PLAYWRIGHT"):
+        monkeypatch.delenv(name, raising=False)
+    store = RuntimeConfigStore(config_path=tmp_path / "config.toml")
+    store.save(api_key="secret", api_url="https://api.example/v1/chat/completions", model="old", use_playwright=False)
+
+    store.update(model="new")
+
+    loaded = store.load()
+    assert loaded.model == "new"
+    assert loaded.api_key == "secret"
+    assert loaded.api_url == "https://api.example/v1/chat/completions"
+    assert loaded.use_playwright is False

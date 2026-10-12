@@ -38,3 +38,9 @@ def test_slash_command_completer_filters_by_prefix():
     matches = [c.text for c in completions]
 
     assert matches == ["/deep-research"]
+
+def test_slash_command_completer_includes_session_commands():
+    completer = WorkspaceFileCompleter()
+    matches = [c.text for c in completer.get_completions(Document("/", cursor_position=1), None)]
+    for command in ("/clear", "/model", "/undo", "/usage", "/init"):
+        assert command in matches

@@ -156,6 +156,24 @@ class RuntimeConfigStore:
             values["use_playwright"] = bool(use_playwright)
         self._write_user_config(values)
 
+    def update(self, **fields: Any) -> None:
+        """Change some saved values while keeping every other saved value."""
+        field_map = {
+            "api_key": "llm_api_key",
+            "api_url": "llm_api_url",
+            "model": "llm_model",
+            "use_playwright": "use_playwright",
+        }
+        values = dict(self._read_user_config())
+        for name, value in fields.items():
+            if name not in field_map:
+                raise RuntimeConfigError(f"Unknown runtime config field: {name}")
+            if value is None:
+                values.pop(field_map[name], None)
+            else:
+                values[field_map[name]] = value
+        self._write_user_config(values)
+
     def import_legacy(self) -> LlmRuntimeConfig:
         legacy_values = parse_legacy_env_file(self.legacy_env_path)
         self.save(
@@ -252,6 +270,10 @@ def save_llm_runtime_config(
     use_playwright: bool | None,
 ) -> None:
     RuntimeConfigStore().save(api_key, api_url, model, use_playwright)
+
+
+def update_llm_runtime_config(**fields: Any) -> None:
+    RuntimeConfigStore().update(**fields)
 
 
 def import_legacy_runtime_config() -> LlmRuntimeConfig:

@@ -40,7 +40,9 @@ from utils.start_animation import render_startup_intro
 from tools.file_ops import set_project_root
 from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.history import FileHistory
+from utils.commands import BUILTIN_COMMANDS, parse_command
 from utils.completer import WorkspaceFileCompleter
+from utils.stream_render import LiveReply
 
 logging.basicConfig(
     level=logging.INFO,
@@ -336,7 +338,8 @@ def build_help_text(discovered_skills: list[Skill] | None = None) -> str:
             skill_lines = "\n" + "\n".join(
                 f"- `{s.trigger}` - {s.description[:60]}" for s in slash_skills
             )
-        skill_lines += "\n- `/skills` - List, create, or remove skills.\n"
+
+    command_lines = "\n".join(f"- `{command.usage}` - {command.description}" for command in BUILTIN_COMMANDS)
 
     return f"""# Helium Help
 
@@ -344,9 +347,7 @@ Helium is a local AI assistant for everyday questions, deep research, file-aware
 
 ## Commands
 
-- `/help` - Show this help guide.
-- `/code <task>` - Agentic coding workflow: inspect files, plan, edit, verify, and report changes.
-- `/deep-research <task>` - Run the deep research pipeline directly with multi-source evidence.
+{command_lines}
 - `@path/to/file <question>` - Attach one local file for RAG-backed answers.
 - `quit`, `exit`, or `stop` - End the current text session.
 {skill_lines}
@@ -385,7 +386,7 @@ Helium will plan searches, collect evidence, synthesize findings, and cite sourc
 
 ## Tool safety
 
-Read/search tools can run automatically. Risky actions such as destructive file operations, unsafe shell commands, and opening apps may ask for confirmation. In `/code`, common file edits are auto-approved so coding tasks can move smoothly, while destructive actions still stay guarded.
+Read/search tools can run automatically. Risky actions such as destructive file operations, unsafe shell commands, and opening apps ask for confirmation; answer `a` to allow the same tool (or exact shell command) for the rest of the session. In `/code`, common file edits are auto-approved so coding tasks can move smoothly, while destructive actions still stay guarded. Use `/undo` to revert Helium's last file change.
 
 ## Examples
 
@@ -426,6 +427,24 @@ def format_code_workflow_report(result) -> str:
 
     return "\n\n".join(sections)
 
+class _Rendering:
+    """Run a LiveReply and expose it as the active status so confirmations can pause it."""
+
+    def __init__(self, *, stream_text: bool | None = None) -> None:
+        self.reply = LiveReply(console, stream_text=stream_text)
+
+    def __enter__(self) -> LiveReply:
+        global _active_status
+        self.reply.start()
+        _active_status = self.reply
+        return self.reply
+
+    def __exit__(self, *exc_info) -> None:
+        global _active_status
+        _active_status = None
+        self.reply.finish()
+
+
 def handle_code_command(user_text: str, confirm_tool) -> bool:
     task = parse_code_command(user_text)
     if task is None:
@@ -435,7 +454,8 @@ def handle_code_command(user_text: str, confirm_tool) -> bool:
         return True
 
     set_state("Coding Workflow")
-    result = run_coding_workflow(task, confirm_tool=confirm_tool)
+    with _Rendering(stream_text=False) as live:
+        result = run_coding_workflow(task, confirm_tool=confirm_tool, on_event=live.handle_event)
     print_chat_message("Helium", format_code_workflow_report(result), style="cyan", markdown=True)
     return True
 
@@ -517,6 +537,122 @@ Place them in `~/.config/helium-agent/skills/<name>/SKILL.md` (user) or `.helium
     return True
 
 
+def handle_clear_command(user_text: str) -> bool:
+    if parse_command(user_text, "/clear") is None:
+        return False
+    from core.llm import conversation_history
+
+    conversation_history.clear()
+    print_chat_message("Helium", "Conversation cleared. Memories and files are unchanged.", style="cyan")
+    return True
+
+
+def handle_usage_command(user_text: str) -> bool:
+    if parse_command(user_text, "/usage") is None:
+        return False
+    from core.session import SESSION
+
+    usage = SESSION.usage
+    table = Table(box=box.SIMPLE, show_header=False)
+    table.add_column("Metric", style="dim")
+    table.add_column("Value", style="cyan", justify="right")
+    table.add_row("Requests", str(usage.requests))
+    table.add_row("Prompt tokens", f"{usage.prompt_tokens:,}")
+    table.add_row("Completion tokens", f"{usage.completion_tokens:,}")
+    table.add_row("Total tokens", f"{usage.total_tokens:,}")
+    table.add_row("Tool calls", str(usage.tool_calls))
+    console.print(app_panel(table, title="Session usage"))
+    return True
+
+
+def _effective_tool_mode(model_name: str, api_url: str | None) -> str:
+    from config.settings import LLM_SETTINGS
+    from core.model_client import tools_supported
+
+    mode = str(LLM_SETTINGS.get("tool_mode", "auto"))
+    if mode != "auto":
+        return mode
+    return "auto (native)" if tools_supported((str(api_url or ""), model_name)) else "auto (text fallback)"
+
+
+def handle_model_command(user_text: str) -> bool:
+    args = parse_command(user_text, "/model")
+    if args is None:
+        return False
+
+    from urllib.parse import urlparse
+
+    from config.runtime_config import update_llm_runtime_config
+    from core.model_client import reset_tool_support
+    from core.session import SESSION, get_active_model
+
+    runtime_config = load_llm_runtime_config()
+    parts = args.split()
+    save = "--save" in parts
+    names = [part for part in parts if part != "--save"]
+
+    if not names:
+        model_name = get_active_model()
+        host = urlparse(runtime_config.api_url or "").netloc or (runtime_config.api_url or "not set")
+        source = "session override" if SESSION.model_override else "saved config"
+        message = (
+            f"Model: `{model_name}` ({source})\n\n"
+            f"Endpoint: `{host}`\n\n"
+            f"Tool calling: {_effective_tool_mode(model_name, runtime_config.api_url)}\n\n"
+            "Switch with `/model <name>`, add `--save` to keep it for future sessions."
+        )
+        print_chat_message("Helium", message, style="cyan", markdown=True)
+        return True
+
+    new_model = names[0]
+    SESSION.model_override = new_model
+    reset_tool_support((str(runtime_config.api_url or ""), new_model))
+    message = f"Switched to `{new_model}` for this session."
+    if save:
+        try:
+            update_llm_runtime_config(model=new_model)
+            message = f"Switched to `{new_model}` and saved it as the default model."
+        except RuntimeConfigError as exc:
+            message += f" Could not save it: {exc}"
+    print_chat_message("Helium", message, style="cyan", markdown=True)
+    return True
+
+
+def handle_undo_command(user_text: str) -> bool:
+    if parse_command(user_text, "/undo") is None:
+        return False
+    from core.llm import remember_turn
+    from tools import file_ops
+    from tools.edit_journal import JOURNAL
+
+    result = JOURNAL.undo()
+    if result is None:
+        print_chat_message("Helium", "Nothing to undo. Only file changes made by Helium's file tools can be undone.", style="cyan")
+        return True
+
+    def display(path: Path) -> str:
+        try:
+            return path.relative_to(file_ops.PROJECT_ROOT).as_posix()
+        except ValueError:
+            return str(path)
+
+    restored = ", ".join(display(path) for path in result.restored) or "nothing"
+    message = f"Reverted `{result.label}` (restored: {restored})."
+    if result.skipped:
+        message += " Skipped files too large to snapshot: " + ", ".join(display(path) for path in result.skipped) + "."
+    print_chat_message("Helium", message, style="cyan", markdown=True)
+    remember_turn(f"[The user ran /undo] {message}", "Noted. I will treat that change as reverted.")
+    return True
+
+
+SESSION_COMMAND_HANDLERS = (
+    handle_clear_command,
+    handle_usage_command,
+    handle_model_command,
+    handle_undo_command,
+)
+
+
 def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None:
     """Run a skill: its body joins the system prompt and the shared agent loop does the rest."""
     set_state(f"Skill: {skill.name}")
@@ -535,18 +671,22 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
         return execute_agent_tool(action, confirm_tool=confirm_tool)
 
     start = time.time()
-    loop_result = run_agent(
-        system_prompt,
-        user_prompt,
-        history=conversation_history,
-        confirm_tool=confirm_tool,
-        tool_names=skill.allowed_tools or None,
-        execute_tool_call=run_tool,
-    )
+    rendering = _Rendering()
+    with rendering as live:
+        loop_result = run_agent(
+            system_prompt,
+            user_prompt,
+            history=conversation_history,
+            confirm_tool=confirm_tool,
+            tool_names=skill.allowed_tools or None,
+            execute_tool_call=run_tool,
+            on_event=live.handle_event,
+        )
+    streamed = rendering.reply.finish()
     reply = loop_result.final_answer
     remember_turn(user_prompt, reply)
 
-    if reply:
+    if reply and not streamed:
         print_chat_message("Helium", reply, style="cyan", markdown=True)
 
     elapsed = time.time() - start
@@ -712,6 +852,8 @@ def main(target_path: str = ".", nuclear: bool = False):
                 continue
             if handle_help_command(user_text, discovered_skills):
                 continue
+            if any(handler(user_text) for handler in SESSION_COMMAND_HANDLERS):
+                continue
             # Check for skill trigger match
             skill_match = match_skill_trigger(user_text, discovered_skills)
             if skill_match:
@@ -736,21 +878,20 @@ def main(target_path: str = ".", nuclear: bool = False):
                 print_chat_message("Error", exc.message, style="red")
                 continue
 
-            with console.status("[cyan]Thinking...[/cyan]", spinner="dots") as status:
-                global _active_status
-                _active_status = status
+            rendering = _Rendering()
+            with rendering as live:
                 def set_state_spinner(state: str):
                     if "Using" in state or "Attachment" in state:
-                        status.update(f"[yellow]{state}...[/yellow]")
+                        live.update(f"[yellow]{state}...[/yellow]")
                     elif "Responding" in state:
-                        status.update("[green]Responding...[/green]")
+                        live.update("[green]Responding...[/green]")
                     elif "Thinking" in state:
-                        status.update("[cyan]Thinking...[/cyan]")
+                        live.update("[cyan]Thinking...[/cyan]")
                     else:
-                        status.update(f"[dim]:: {state}[/dim]")
+                        live.update(f"[dim]:: {state}[/dim]")
 
-                try:
-                    reply_generator = generate_response(
+                reply_list = list(
+                    generate_response(
                         llm_prompt,
                         confirm_tool=confirm_tool,
                         on_state=set_state_spinner,
@@ -758,12 +899,13 @@ def main(target_path: str = ".", nuclear: bool = False):
                         on_tool_result=collect_tool_result,
                         print_metrics=False,
                         skills=discovered_skills,
+                        on_event=live.handle_event,
                     )
-                    reply_list = list(reply_generator)
-                finally:
-                    _active_status = None
-            
-            stream_reply(reply_list)
+                )
+            streamed = rendering.reply.finish()
+
+            if not streamed:
+                stream_reply(reply_list)
             print_sources(sources)
             if metrics:
                 print_metrics(metrics)
