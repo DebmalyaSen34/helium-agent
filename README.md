@@ -16,13 +16,15 @@ Helium is still developing and more features are added as you read this. I would
 ## What It Can Do
 
 - **Answer everyday questions:** Just like any other agent it can repsond to any mundane queries you might have. It won't judge you.
-- **Tool calling:** Helium can calls tools it has to perform complex operations in order to respond to your queries.
-- **Coding**: It can perform long coding tasks with the help of `agentic loop` build inside it.
+- **Tool calling:** Helium uses native OpenAI-compatible tool calling (several tools per turn, in parallel when they are read-only), and falls back to a text protocol for models or servers that don't support tools.
+- **Coding**: `/code` runs an agentic loop that explores the project, plans, edits files with precise multi-edits, runs your tests, and reports what changed. `/undo` reverts its last file change.
+- **Project instructions:** Put a `HELIUM.md` in your project (or let `/init` write one) and Helium follows it in every conversation.
 - **Deep Research:** For queries that include an `in-depth` knowledge and information retrieval Helium will take help of its research tool to provide with most accurate repsonse with proper citations.
 - **Web Search:** It can use `DuckDuckGoSearch` API to get web results and if necessary it will use `playwright` to dig deeper into complex websites all to make sure you get the best answer.
 - **RAG:** Currently a simple RAG pipeline is integrated where only 1 file at a time can be given to Helium and it will respond accordingly. [Future plans to scale this]
 - **Bash execution:** Helium can perform `safe` bash operations in its terminal.
-- **Long-term memory:** It uses a `in-memory sqlite` database which is currently session-scoped to remember important facts.
+- **Long-term memory:** Facts and preferences are stored in SQLite, one database per project, and Helium picks up where the last session in that project left off.
+- **Streaming:** Answers stream into the terminal as they are generated, with a line for each tool Helium uses.
 
 ## Prerequisites
 
@@ -30,9 +32,8 @@ Helium is optimized for **macOS on Apple Silicon** but I have tested it across p
 
 You will need:
 
-- Python 3.11+
-- A local LLM service, usually `llama.cpp`
-- If you have an API endpoint to any LLM you can use that too.
+- Python 3.10+
+- Any OpenAI-compatible chat completions endpoint: a local server (llama.cpp, Ollama, LM Studio, vLLM) or a hosted API (OpenRouter and others).
 
 Default service URLs are configured in [`config/settings.py`](config/settings.py) and can be overridden in [`config/settings.toml`](config/settings.toml).
 
@@ -53,6 +54,31 @@ helium .
 ```
 
 For more commands type `/help` in the chat.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `/help` | Show the help guide. |
+| `/code <task>` | Agentic coding: explore, plan, edit, verify, and report changes. |
+| `/deep-research <task>` | Multi-source research report with citations. |
+| `/init` | Inspect the project and write a `HELIUM.md` with project instructions. |
+| `/undo` | Revert the last file change Helium made (shell-command changes are not covered). |
+| `/model [name] [--save]` | Show the model, or switch it for this session (`--save` keeps it). |
+| `/usage` | Token and tool usage for this session. |
+| `/clear` | Clear the conversation (memories and files are kept). |
+| `/skills` | List, create, or remove skills. |
+| `@path/to/file <question>` | Ask about a file through the RAG service. |
+
+When Helium asks to run a risky tool, answer `y`, `n`, or `a` to allow that tool (or that exact shell command) for the rest of the session. `helium . --nuclear` skips all confirmations.
+
+### Project instructions (HELIUM.md)
+
+Helium reads `HELIUM.md` (or `.helium/HELIUM.md`) from the project root and adds it to every prompt, the same way you would brief a new teammate: build and test commands, layout, conventions, and gotchas. Run `/init` to have Helium draft one.
+
+### Tool-calling mode
+
+By default (`tool_mode = "auto"` in [`config/settings.toml`](config/settings.toml)) Helium sends tool schemas using the OpenAI `tools` API. If the endpoint rejects them, Helium switches to its text `<action>` protocol for that model automatically. Set `tool_mode = "text"` or `"native"` to force one.
 
 ## Docker
 
@@ -122,21 +148,17 @@ Run a compatible instruction-tuned GGUF model on port `3000`:
 ./llama-server -m /path/to/your/model.gguf -c 4096 --port 3000
 ```
 
-Helium expects the default completion endpoint to be OPENAI compatible version:
+Helium expects an OpenAI-compatible chat completions endpoint:
 
 ```text
-http://127.0.0.1:3000/v1/chat/completion
+http://127.0.0.1:3000/v1/chat/completions
 ```
+
+For Ollama use `http://localhost:11434/v1/chat/completions` (not the native `/api/chat` endpoint).
 
 ### Use LLM API
 
-Run `helium` and follow the setup wizard. Persistent API keys are stored in your operating system credential manager:
-
-- macOS: Keychain
-- Windows: Credential Manager
-- Linux: Secret Service or KWallet, depending on your desktop environment
-
-Non-secret defaults such as the API URL, model, and Playwright toggle are stored in your user Helium config directory.
+Run `helium` and follow the setup wizard. The API key, URL, model, and Playwright toggle are saved to `config.toml` in your user Helium config directory, readable only by your user (`chmod 600`).
 
 You can still use environment variables for CI, Docker, or temporary overrides:
 
@@ -146,7 +168,7 @@ LLM_API_URL=your-llm-url
 LLM_MODEL=your-model
 ```
 
-If you previously used `~/.helium.env`, Helium can import it into secure storage during setup. The legacy file is left untouched, so remove it yourself after confirming the import worked.
+If you previously used `~/.helium.env`, Helium can import it into the config file during setup. The legacy file is left untouched, so remove it yourself after confirming the import worked.
 
 ### Start Playwright
 
@@ -168,7 +190,7 @@ playright install chromium
 
 Helium comes with its own RAG pipeline. This allows you to add files with `@` prefix to the file path to your file. Then you can ask anything about that file.
 
-Currently it is good enough to answer what is inside it, summarize it, and other basic questions. Later I intend to deepen the understanding of the file using local embeddings.
+Retrieval is lexical (keyword-based), so it needs no model downloads. It is good at answering what is inside a file, summarizing it, and other basic questions.
 
 This is an **optional** feature. Look into `rag_service` directory for more detail.
 
@@ -212,7 +234,9 @@ RAG request example:
 Run the test suite from the repository root:
 
 ```bash
-python -m unittest discover -s tests
+uv run pytest tests -q --ignore=tests/test_eval_graders.py --ignore=tests/test_eval_runner.py --ignore=tests/test_eval_schema.py
 ```
+
+The tests never call a real LLM endpoint and keep memory and history in a temporary directory.
 
 
