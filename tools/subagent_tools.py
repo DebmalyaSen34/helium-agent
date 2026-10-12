@@ -57,19 +57,11 @@ def delegate_task(
     if agent is None:
         return f"Subagent with id '{agent_id}' not found."
 
-    from core.llm import call_llm_once, execute_agent_tool
-
-    def ask_model(messages):
-        reply, _ = call_llm_once(messages)
-        return reply
-
     try:
         with subagent_scope():
             result = manager.run_agent(
                 agent_id=agent_id,
                 task=task,
-                ask_model=ask_model,
-                execute_tool_call=execute_agent_tool,
                 confirm_tool=current_confirm_tool.get(),
             )
         return f"Subagent '{agent.name}' completed task. Result:\n{result}"

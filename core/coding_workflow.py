@@ -4,9 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from config.settings import ASSISTANT_PERSONA
-from tools.registry import TOOL_PROMPT
-from core.llm import AgenticLoop, call_llm_once, execute_agent_tool
+from config.settings import AGENT_SETTINGS
+from core.llm import run_agent
+from core.prompts import build_system_prompt
 
 CODING_AUTO_APPROVED_TOOLS = frozenset(
     {
@@ -41,9 +41,11 @@ class CodingWorkflowResult:
 
 
 def build_coding_system_prompt(task: str) -> str:
+    return build_system_prompt("code", extra=_coding_rules(task))
+
+
+def _coding_rules(task: str) -> str:
     return (
-        f"{ASSISTANT_PERSONA}\n\n"
-        f"{TOOL_PROMPT}\n\n"
         "<coding_workflow_mode>\n"
         "You are running Helium's /code workflow for a coding task.\n"
         f"User coding task: {task}\n\n"
@@ -94,7 +96,8 @@ def run_coding_workflow(
     confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
     ask_model: Callable[[list[dict[str, str]]], str] | None = None,
     execute_tool_call: Callable[..., str | None] | None = None,
-    max_turns: int = 30,
+    max_turns: int | None = None,
+    on_event: Callable[[str, Any], None] | None = None,
 ) -> CodingWorkflowResult:
     
     changed_files: list[str] = []
@@ -102,15 +105,13 @@ def run_coding_workflow(
 
     system_prompt = build_coding_system_prompt(task)
 
-    if ask_model is None:
-        def ask_model(messages: list[dict[str, str]]) -> str:
-            reply, _tokens = call_llm_once(messages)
-            return reply
+    if execute_tool_call is None:
+        from core.llm import execute_agent_tool
 
-    # if execute_tool_call is None:
-    #     execute_tool_call = execute_agent_tool
-
-    base_execute_tool_call = execute_tool_call or execute_agent_tool
+        def base_execute_tool_call(action, confirm_tool=None):
+            return execute_agent_tool(action, confirm_tool=confirm_tool)
+    else:
+        base_execute_tool_call = execute_tool_call
 
     def execute_for_coding(
         action: dict[str, Any],
@@ -141,16 +142,14 @@ def run_coding_workflow(
     ) -> bool:
         return coding_confirm_tool(tool_name, args, permission, confirm_tool)
 
-    loop = AgenticLoop(
-        ask_model=ask_model,
-        execute_tool_call=execute_for_coding,
-        max_turns=max_turns,
-    )
-    result = loop.run(
-        system_prompt=system_prompt,
-        user_prompt=task,
-        history=None,
+    result = run_agent(
+        system_prompt,
+        task,
         confirm_tool=confirm_for_coding,
+        max_turns=max_turns or int(AGENT_SETTINGS.get("code_max_turns", 40)),
+        on_event=on_event,
+        execute_tool_call=execute_for_coding,
+        ask_model=ask_model,
     )
     return CodingWorkflowResult(
         final_answer=result.final_answer,

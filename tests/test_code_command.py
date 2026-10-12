@@ -235,6 +235,7 @@ if __name__ == "__main__":
 
 
 class InvokeSkillTests(unittest.TestCase):
+    @patch.dict("core.llm.LLM_SETTINGS", {"tool_mode": "text"})
     @patch("main.print_metrics")
     @patch("main.print_chat_message")
     @patch("core.llm.call_llm_once", return_value=("Skill done.", 3))

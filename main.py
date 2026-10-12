@@ -502,40 +502,15 @@ Place them in `~/.config/helium-agent/skills/<name>/SKILL.md` (user) or `.helium
 
 
 def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None:
-    """Run a skill by injecting its body into the system prompt and running the agentic loop."""
+    """Run a skill: its body joins the system prompt and the shared agent loop does the rest."""
     set_state(f"Skill: {skill.name}")
 
-    from core.llm import call_llm_once, execute_agent_tool, AgenticLoop
-    from config.settings import ASSISTANT_PERSONA
-    from tools.registry import TOOL_PROMPT
     import time
+    from core.llm import conversation_history, execute_agent_tool, remember_turn, run_agent
+    from core.prompts import build_system_prompt
 
-    # Build skill-augmented system prompt
-    system_prompt = (
-        f"{ASSISTANT_PERSONA}\n\n"
-        f"{TOOL_PROMPT}\n\n"
-        f"<skill name=\"{skill.name}\">\n{skill.body}\n</skill>\n\n"
-    )
-
-    if skill.argument_hint:
-        system_prompt += f"Argument hint: {skill.argument_hint}\n\n"
-
-    if skill.allowed_tools:
-        tools_list = ", ".join(skill.allowed_tools)
-        system_prompt += f"Pre-approved tools for this skill: {tools_list}\n\n"
-
+    system_prompt = build_system_prompt("skill", user_prompt=args, skill=skill)
     user_prompt = args if args else f"Run the /{skill.name} skill."
-
-    # Run agentic loop
-    from core.llm import conversation_history, MAX_AGENTIC_TURNS, MAX_HISTORY
-
-    token_count = 0
-
-    def ask_model(loop_messages):
-        nonlocal token_count
-        reply_text, tokens = call_llm_once(loop_messages)
-        token_count += tokens
-        return reply_text
 
     def run_tool(action, confirm_tool=None):
         tool_name = str(action.get("tool", "unknown"))
@@ -544,36 +519,30 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
         return execute_agent_tool(action, confirm_tool=confirm_tool)
 
     start = time.time()
-    loop = AgenticLoop(
-        ask_model=ask_model,
-        execute_tool_call=run_tool,
-        max_turns=MAX_AGENTIC_TURNS,
-    )
-    loop_result = loop.run(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
+    loop_result = run_agent(
+        system_prompt,
+        user_prompt,
         history=conversation_history,
         confirm_tool=confirm_tool,
+        tool_names=skill.allowed_tools or None,
+        execute_tool_call=run_tool,
     )
     reply = loop_result.final_answer
-
-    # Save to conversation history
-    conversation_history.append({"role": "user", "content": user_prompt})
-    conversation_history.append({"role": "assistant", "content": reply})
-    if len(conversation_history) > MAX_HISTORY:
-        conversation_history[:] = conversation_history[-MAX_HISTORY:]
+    remember_turn(user_prompt, reply)
 
     if reply:
         print_chat_message("Helium", reply, style="cyan", markdown=True)
 
     elapsed = time.time() - start
-    metrics = {
-        "total_time": elapsed,
-        "tokens": token_count,
-        "tps": token_count / elapsed if elapsed > 0 else 0.0,
-        "tools_used": ", ".join(loop_result.tools_used) or "None",
-    }
-    print_metrics(metrics)
+    token_count = int(loop_result.usage.get("completion_tokens", 0))
+    print_metrics(
+        {
+            "total_time": elapsed,
+            "tokens": token_count,
+            "tps": token_count / elapsed if elapsed > 0 else 0.0,
+            "tools_used": ", ".join(loop_result.tools_used) or "None",
+        }
+    )
 
 
 def prepare_rag_prompt(user_text: str) -> str:

@@ -109,7 +109,7 @@ class SubAgentManagerTests(unittest.TestCase):
             observations=[],
         )
 
-        def capture_loop(ask_model, execute_tool_call, max_turns):
+        def capture_loop(ask_model=None, execute_tool_call=None, max_turns=None, **kwargs):
             nonlocal captured_execute
             captured_execute = execute_tool_call
             return mock_loop

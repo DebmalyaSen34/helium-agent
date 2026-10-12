@@ -72,18 +72,21 @@ class SubAgentManager:
         if agent.system_prompt_override:
             return agent.system_prompt_override
 
+        from core.prompts import build_system_prompt
+
         tool_constraint = ""
         if agent.allowed_tools:
             tool_list = ", ".join(sorted(agent.allowed_tools))
             tool_constraint = f"\nYou may ONLY use these tools: {tool_list}."
 
-        return (
+        role = (
             f"You are a subagent named '{agent.name}'.\n"
             f"Your role: {agent.role}\n"
             f"Task: {task}\n"
             f"Work within {agent.max_turns} tool turns. "
-            f"Be focused and precise.{tool_constraint}\n"
+            f"Be focused and precise, and finish with a concise report for the parent agent.{tool_constraint}"
         )
+        return build_system_prompt("subagent", persona=role)
 
     def _wrap_execute_tool(
         self,
@@ -104,9 +107,10 @@ class SubAgentManager:
         self,
         agent_id: str,
         task: str,
-        ask_model: Callable[[list[dict[str, str]]], str],
-        execute_tool_call: Callable[..., str | None],
+        ask_model: Callable[[list[dict[str, str]]], str] | None = None,
+        execute_tool_call: Callable[..., str | None] | None = None,
         confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
+        model: Any | None = None,
     ) -> str:
         agent = self.registry.get(agent_id)
         if agent is None:
@@ -115,14 +119,22 @@ class SubAgentManager:
         agent.status = SubAgentStatus.RUNNING
 
         try:
-            system_prompt = self._build_system_prompt(agent, task)
-            wrapped_execute = self._wrap_execute_tool(execute_tool_call, agent)
+            from core.llm import default_model, execute_agent_tool
 
-            loop = AgenticLoop(
-                ask_model=ask_model,
-                execute_tool_call=wrapped_execute,
-                max_turns=agent.max_turns,
-            )
+            system_prompt = self._build_system_prompt(agent, task)
+            wrapped_execute = self._wrap_execute_tool(execute_tool_call or execute_agent_tool, agent)
+
+            loop_kwargs: dict[str, Any] = {
+                "ask_model": ask_model,
+                "execute_tool_call": wrapped_execute,
+                "max_turns": agent.max_turns,
+            }
+            if ask_model is None:
+                loop_kwargs["model"] = model or default_model()
+            if agent.allowed_tools:
+                loop_kwargs["tool_names"] = sorted(agent.allowed_tools)
+
+            loop = AgenticLoop(**loop_kwargs)
             result = loop.run(
                 system_prompt=system_prompt,
                 user_prompt=task,
