@@ -2,6 +2,15 @@ from __future__ import annotations
 import requests
 from config.runtime_config import load_llm_runtime_config
 
+def _read_timeout() -> float:
+    try:
+        from config.settings import LLM_SETTINGS
+
+        return float(LLM_SETTINGS.get("read_timeout", 120))
+    except Exception:
+        return 120.0
+
+
 def hit_api(
     payload: dict,
     is_stream: bool = True,
@@ -22,7 +31,7 @@ def hit_api(
             },
             json=payload,
             stream=is_stream,
-            timeout=(10, 30) if is_stream else None, # 10s read timeout and 30s connect timeout
+            timeout=(10, _read_timeout()),  # (connect, read) seconds
         )
         return response
     except requests.ConnectTimeout:

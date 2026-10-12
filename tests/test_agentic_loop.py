@@ -86,6 +86,7 @@ class AgenticLoopTests(unittest.TestCase):
         self.assertEqual(len(result.observations), 2)
         self.assertIn("Invalid tool action", result.observations[0])
 
+    @patch.dict("core.llm.LLM_SETTINGS", {"tool_mode": "text"})
     @patch("tools.memory_ops.get_relevant_memories", return_value=[])
     @patch("core.llm.execute_agent_tool")
     @patch("core.llm.call_llm_once")
@@ -145,3 +146,147 @@ class ReasoningCleanupTests(unittest.TestCase):
         from core.llm import clean_token
 
         self.assertEqual(clean_token("User: alice<end_of_turn>"), "User: alice")
+
+
+from core.model_client import ModelTurn, ToolCall, ToolsUnsupportedError, reset_tool_support, tools_supported
+
+
+class FakeNativeModel:
+    supports_tools = True
+    cache_key = ("https://fake", "fake-model")
+
+    def __init__(self, turns):
+        self.turns = list(turns)
+        self.calls = []
+
+    def complete(self, messages, tools=None, on_text=None):
+        self.calls.append({"messages": [dict(m) for m in messages], "tools": tools})
+        turn = self.turns.pop(0)
+        if isinstance(turn, Exception):
+            raise turn
+        if on_text and turn.content:
+            on_text(turn.content)
+        return turn
+
+
+class NativeToolLoopTests(unittest.TestCase):
+    def setUp(self):
+        reset_tool_support()
+
+    def test_native_tool_calls_are_paired_with_tool_messages(self):
+        model = FakeNativeModel(
+            [
+                ModelTurn(content="", tool_calls=[ToolCall("c1", "read_file", {"path": "README.md"})], usage={"prompt_tokens": 5, "completion_tokens": 2}),
+                ModelTurn(content="All done.", usage={"prompt_tokens": 9, "completion_tokens": 3}),
+            ]
+        )
+        loop = AgenticLoop(
+            model=model,
+            execute_tool_call=lambda action, confirm_tool=None: f"{action['tool']} ok",
+            tool_mode="auto",
+        )
+        result = loop.run("sys", "go")
+
+        self.assertEqual(result.final_answer, "All done.")
+        self.assertEqual(result.tools_used, ["read_file"])
+        self.assertEqual(result.usage["completion_tokens"], 5)
+        second_request = model.calls[1]["messages"]
+        self.assertEqual(second_request[-2]["tool_calls"][0]["id"], "c1")
+        self.assertEqual(second_request[-1], {"role": "tool", "tool_call_id": "c1", "content": "read_file ok"})
+        self.assertIsNotNone(model.calls[0]["tools"])
+        self.assertNotIn("<json_contract>", second_request[0]["content"])
+
+    def test_safe_calls_in_one_turn_run_in_parallel_and_keep_order(self):
+        import threading
+
+        barrier = threading.Barrier(2, timeout=2)
+
+        def execute(action, confirm_tool=None):
+            barrier.wait()  # deadlocks unless both calls run concurrently
+            return action["tool"]
+
+        model = FakeNativeModel(
+            [
+                ModelTurn(content="", tool_calls=[ToolCall("a", "get_time", {}), ToolCall("b", "list_directory", {})]),
+                ModelTurn(content="ok"),
+            ]
+        )
+        result = AgenticLoop(model=model, execute_tool_call=execute, tool_mode="native").run("sys", "go")
+        self.assertEqual(result.observations, ["get_time", "list_directory"])
+
+    def test_bad_arguments_are_fed_back_without_running_the_tool(self):
+        executed = []
+        model = FakeNativeModel(
+            [
+                ModelTurn(content="", tool_calls=[ToolCall("a", "read_file", {}, raw_arguments="{bad", parse_error="Expecting value")]),
+                ModelTurn(content="recovered"),
+            ]
+        )
+        result = AgenticLoop(
+            model=model,
+            execute_tool_call=lambda action, confirm_tool=None: executed.append(action) or "ran",
+            tool_mode="native",
+        ).run("sys", "go")
+        self.assertEqual(executed, [])
+        self.assertIn("could not parse", result.observations[0])
+
+    def test_falls_back_to_text_protocol_when_tools_rejected(self):
+        model = FakeNativeModel(
+            [
+                ToolsUnsupportedError("no tools", 400),
+                ModelTurn(content='<action>{"tool": "get_time", "args": {}}</action>'),
+                ModelTurn(content="It is noon."),
+            ]
+        )
+        result = AgenticLoop(
+            model=model,
+            execute_tool_call=lambda action, confirm_tool=None: "12:00",
+            tool_mode="auto",
+        ).run("sys", "time?")
+
+        self.assertEqual(result.final_answer, "It is noon.")
+        self.assertFalse(tools_supported(model.cache_key))
+        self.assertIsNone(model.calls[1]["tools"])
+        self.assertIn("<json_contract>", model.calls[1]["messages"][0]["content"])
+
+    def test_long_tool_output_is_truncated(self):
+        model = FakeNativeModel(
+            [ModelTurn(content="", tool_calls=[ToolCall("a", "get_time", {})]), ModelTurn(content="done")]
+        )
+        result = AgenticLoop(
+            model=model,
+            execute_tool_call=lambda action, confirm_tool=None: "x" * 5000 + "TAIL",
+            tool_mode="native",
+            max_tool_output_chars=300,
+        ).run("sys", "go")
+        self.assertIn("omitted", result.observations[0])
+        self.assertTrue(result.observations[0].endswith("TAIL"))
+
+    def test_compaction_elides_oldest_tool_output(self):
+        model = FakeNativeModel(
+            [
+                ModelTurn(content="", tool_calls=[ToolCall("a", "get_time", {})]),
+                ModelTurn(content="", tool_calls=[ToolCall("b", "get_time", {})]),
+                ModelTurn(content="", tool_calls=[ToolCall("c", "get_time", {})]),
+                ModelTurn(content="done"),
+            ]
+        )
+        AgenticLoop(
+            model=model,
+            execute_tool_call=lambda action, confirm_tool=None: "y" * 1000,
+            tool_mode="native",
+            context_budget_chars=1500,
+        ).run("sys", "go")
+        last_request = model.calls[-1]["messages"]
+        self.assertTrue(any(str(m.get("content", "")).startswith("[earlier tool output elided") for m in last_request))
+
+    def test_tool_names_limit_schemas_sent(self):
+        model = FakeNativeModel([ModelTurn(content="hi")])
+        AgenticLoop(model=model, tool_names=["read_file"], tool_mode="native").run("sys", "go")
+        self.assertEqual([t["function"]["name"] for t in model.calls[0]["tools"]], ["read_file"])
+
+    def test_text_deltas_are_emitted_in_native_mode(self):
+        events = []
+        model = FakeNativeModel([ModelTurn(content="streamed")])
+        AgenticLoop(model=model, tool_mode="native", on_event=lambda kind, payload: events.append((kind, payload))).run("sys", "go")
+        self.assertIn(("text_delta", "streamed"), events)
