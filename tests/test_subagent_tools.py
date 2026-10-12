@@ -240,3 +240,58 @@ class SubagentIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SubagentContextTests(unittest.TestCase):
+    def setUp(self):
+        self.registry = AgentRegistry()
+        self.manager = SubAgentManager(registry=self.registry)
+        _set_manager(self.manager)
+
+    def tearDown(self):
+        _set_manager(None)
+
+    def test_delegate_task_forwards_parent_confirm_tool(self):
+        from core.agent_context import confirm_tool_scope
+
+        create_subagent(name="writer", role="write files")
+        agent = self.registry.find_by_name("writer")
+        mock_loop = MagicMock()
+        mock_loop.run.return_value = MagicMock(final_answer="done")
+
+        def parent_confirm(tool_name, args, permission):
+            return True
+
+        with patch("core.subagent_manager.AgenticLoop", return_value=mock_loop):
+            with confirm_tool_scope(parent_confirm):
+                delegate_task(agent_id=agent.agent_id, task="write a file")
+
+        self.assertIs(mock_loop.run.call_args.kwargs["confirm_tool"], parent_confirm)
+
+    def test_subagents_cannot_spawn_or_delegate(self):
+        from core.agent_context import subagent_scope
+
+        create_subagent(name="reader", role="read files")
+        agent = self.registry.find_by_name("reader")
+        with subagent_scope():
+            self.assertIn("cannot", create_subagent(name="nested", role="x").lower())
+            self.assertIn("cannot", delegate_task(agent_id=agent.agent_id, task="x").lower())
+
+    def test_registry_execute_tool_exposes_confirm_tool_to_tools(self):
+        from core.agent_context import current_confirm_tool
+        from tools import registry
+        from tools.registry import ToolDefinition, execute_tool
+
+        seen = []
+
+        def probe() -> str:
+            seen.append(current_confirm_tool.get())
+            return "ok"
+
+        def confirm(tool_name, args, permission):
+            return True
+
+        with patch.dict(registry.AVAILABLE_TOOLS, {"probe": ToolDefinition(probe, "probe", "safe")}):
+            execute_tool('{"tool": "probe", "args": {}}', confirm_tool=confirm)
+
+        self.assertEqual(seen, [confirm])

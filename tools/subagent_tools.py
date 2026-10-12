@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from core.agent_context import current_confirm_tool, in_subagent, subagent_scope
 from core.subagent_manager import SubAgentManager
+
+NESTED_SUBAGENT_ERROR = "Subagents cannot create or delegate to other subagents."
 
 _manager: SubAgentManager | None = None
 
@@ -24,6 +27,8 @@ def create_subagent(
     max_turns: int = 10,
 ) -> str:
     """Create a new subagent with a name, role, and optional tool restrictions."""
+    if in_subagent():
+        return NESTED_SUBAGENT_ERROR
     manager = _get_manager()
 
     tool_set = None
@@ -44,6 +49,8 @@ def delegate_task(
     task: str,
 ) -> str:
     """Delegate a task to an existing subagent by its agent_id."""
+    if in_subagent():
+        return NESTED_SUBAGENT_ERROR
     manager = _get_manager()
 
     agent = manager.get_agent(agent_id)
@@ -57,12 +64,14 @@ def delegate_task(
         return reply
 
     try:
-        result = manager.run_agent(
-            agent_id=agent_id,
-            task=task,
-            ask_model=ask_model,
-            execute_tool_call=execute_agent_tool,
-        )
+        with subagent_scope():
+            result = manager.run_agent(
+                agent_id=agent_id,
+                task=task,
+                ask_model=ask_model,
+                execute_tool_call=execute_agent_tool,
+                confirm_tool=current_confirm_tool.get(),
+            )
         return f"Subagent '{agent.name}' completed task. Result:\n{result}"
     except Exception as e:
         return f"Subagent '{agent.name}' failed: {e}"

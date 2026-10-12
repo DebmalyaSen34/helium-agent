@@ -336,14 +336,12 @@ Helium is a local AI assistant for everyday questions, deep research, file-aware
 {skill_lines}
 ## What You Can Ask
 
-## What You Can Ask
-
 - Everyday chat: ask questions, draft text, summarize ideas, or reason through decisions.
 - Deep research: request cited reports, comparisons, market/policy analysis, or current-event research.
 - Agentic coding: fix bugs, add tests, inspect project architecture, refactor focused code, and run verification.
 - File work: read, create, patch, search, and summarize project files through tools.
 - Web work: search the web, fetch pages, and synthesize evidence with source URLs.
-- Memory: ask Helium to remember preferences or facts for the current session.
+- Memory: ask Helium to remember preferences or facts; memory persists across sessions.
 
 ## Agentic Coding
 
@@ -570,9 +568,10 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
 
     elapsed = time.time() - start
     metrics = {
+        "total_time": elapsed,
         "tokens": token_count,
-        "time": round(elapsed, 2),
-        "tools": loop_result.tools_used,
+        "tps": token_count / elapsed if elapsed > 0 else 0.0,
+        "tools_used": ", ".join(loop_result.tools_used) or "None",
     }
     print_metrics(metrics)
 

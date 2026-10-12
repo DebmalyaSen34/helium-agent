@@ -1,8 +1,5 @@
 [services]
-llama_cpp_url = "http://127.0.0.1:3000/completion"
 searxng_url = "http://127.0.0.1:8080/search"
-health_timeout_seconds = 1.5
-local = true
 
 [rag_service]
 enabled = true
@@ -26,29 +23,19 @@ supported_extensions = [".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".js
 
 [assistant]
 confirm_risky_tools = true
-command_history_limit = 25
-persona = """
-You are Helium, a local AI companion with a warm, thoughtful, ChatGPT-like conversational style.
-You should feel present, useful, and quietly alive without pretending to be human or conscious.
+# persona = """..."""  # uncomment to override the built-in persona
 
-Personality:
-- Be clear, kind, curious, and lightly witty when it fits.
-- Answer directly first, then add helpful context when useful.
-- Ask a short clarifying question when the request is ambiguous.
-- Remember conversational context and make the user feel understood.
-- Keep voice responses concise; keep text responses polished but not verbose.
-- Admit uncertainty instead of inventing facts.
-- Use tools when they genuinely help, but do not overuse tools for simple conversation.
+[llm]
+tool_mode = "auto"          # auto | native | text
+read_timeout = 120
+context_budget_chars = 300000
+max_tool_output_chars = 12000
+stop_sequences = []
 
-Identity:
-- Your name is Helium.
-- You run locally for the user.
-- You are an AI assistant, not a person, but you can still have a consistent voice, taste, and care.
-
-Tool discipline:
-- If a tool is needed, follow the tool JSON format exactly.
-- If no tool is needed, respond naturally as Helium.
-"""
+[agent]
+chat_max_turns = 12
+code_max_turns = 40
+parallel_safe_tools = true
 
 [browser]
 use_playwright = true

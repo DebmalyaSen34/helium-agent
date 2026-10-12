@@ -41,10 +41,9 @@ packages = [
     "skills"
 ]
 
+[tool.setuptools.package-data]
+config = ["settings.toml"]
+
 [dependency-groups]
 dev = ["pytest"]
 
-[tool.uv.workspace]
-members = [
-    "api",
-]

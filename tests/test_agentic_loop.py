@@ -131,3 +131,17 @@ class AgenticLoopTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReasoningCleanupTests(unittest.TestCase):
+    def test_strip_reasoning_removes_think_blocks(self):
+        from core.llm import strip_reasoning
+
+        self.assertEqual(strip_reasoning("<think>plan</think>Answer"), "Answer")
+        self.assertEqual(strip_reasoning("still thinking</think>Answer"), "Answer")
+        self.assertEqual(strip_reasoning("<think>never closed"), "")
+
+    def test_clean_token_keeps_user_prefix_in_content(self):
+        from core.llm import clean_token
+
+        self.assertEqual(clean_token("User: alice<end_of_turn>"), "User: alice")

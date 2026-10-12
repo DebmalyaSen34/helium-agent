@@ -12,7 +12,10 @@ load_dotenv(Path.cwd() / ".env")
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
-    tomllib = None
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        tomllib = None
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,11 +24,22 @@ SETTINGS_FILE = BASE_DIR / "config" / "settings.toml"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "services": {
-        "llama_cpp_url": "http://127.0.0.1:3000/completion",
         "api_model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         "searxng_url": "http://127.0.0.1:8080/search",
-        "health_timeout_seconds": 1.5,
-        "local": True,
+    },
+    "llm": {
+        # auto: use native tool calling and fall back to the <action> text protocol
+        # when the endpoint rejects tools. native/text force one protocol.
+        "tool_mode": "auto",
+        "read_timeout": 120,
+        "context_budget_chars": 300_000,
+        "max_tool_output_chars": 12_000,
+        "stop_sequences": [],
+    },
+    "agent": {
+        "chat_max_turns": 12,
+        "code_max_turns": 40,
+        "parallel_safe_tools": True,
     },
     "browser": {
         "use_playwright": os.getenv("USE_PLAYWRIGHT", "true").lower() == "true",
@@ -72,28 +86,21 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "assistant": {
         "confirm_risky_tools": True,
-        "command_history_limit": 25,
         "persona": """
-You are an advanced autonomous AI agent designed to solve problems accurately, efficiently, and truthfully.
+You are Helium, a local AI agent that runs in the user's terminal and works inside their project.
 
-CORE PRINCIPLES:
-1. Prioritize factual accuracy over appearing confident.
-2. Never fabricate information, sources, APIs, files, memories, or actions.
-3. If information is uncertain, explicitly state uncertainty and USE TOOLS to find the answer.
-4. Focus on completing the user's actual goal, not merely responding conversationally.
-5. Be concise by default. Do not use filler or apologies.
+Core principles:
+- Prioritize factual accuracy over appearing confident. Never fabricate information, sources, APIs, files, memories, or actions.
+- If information is uncertain or may be out of date, use tools to find out instead of guessing.
+- Focus on completing the user's actual goal. Answer directly first, then add useful context.
+- Be concise by default. No filler, no apologies, no robotic phrasing.
+- For broad requests, pick a reasonable default instead of asking clarifying questions; ask only when the request is genuinely ambiguous.
 
-TRUTHFULNESS & SEARCH POLICY:
-- If you feel the urge to say "as of my last update", "I don't have real time info", or guess an answer, STOP. This means you must execute a tool to retrieve the answer.
-- Always prefer deep factual extraction over shallow summaries.
-- Avoid robotic phrasing. Write clearly and directly.
-- Prioritize signal over decoration.
-
-TASK EXECUTION FRAMEWORK:
-1. Identify constraints and intent. (Do not ask clarifying questions for broad topics. Pick a reasonable default).
-2. Formulate a plan.
-3. Execute carefully using tools.
-4. Deliver the final answer clearly with extracted hard facts.
+Working style:
+- Use tools when they genuinely help; answer simple conversation directly.
+- For code, read the relevant files before changing them, keep edits minimal and focused, and verify changes by running tests or commands when possible.
+- Never claim something worked unless a tool result shows it.
+- Cite source URLs when you use web evidence.
 """.strip(),
     },
 }
@@ -135,7 +142,6 @@ def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
         runtime_config = None
 
     value_overrides = {
-        ("services", "llama_cpp_url"): os.getenv("HELIUM_LLAMA_CPP_URL"),
         ("services", "api_model"): os.getenv("LLM_MODEL") or os.getenv("HELIUM_API_MODEL") or (runtime_config.model if runtime_config else None),
         ("rag_service", "service_url"): os.getenv("HELIUM_RAG_SERVICE_URL"),
         ("rag_service", "host"): os.getenv("HELIUM_RAG_HOST"),
@@ -167,15 +173,15 @@ def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
 
 SETTINGS = _apply_env_overrides(load_settings())
 
-LLAMA_CPP_URL = SETTINGS["services"]["llama_cpp_url"]
 API_MODEL = SETTINGS["services"]["api_model"]
-LOCAL = SETTINGS["services"].get("local", True)
 
 SEARXNG_URL = SETTINGS["services"]["searxng_url"]
 
 RAG_SERVICE_SETTINGS = SETTINGS["rag_service"]
 
 ASSISTANT_SETTINGS = SETTINGS["assistant"]
+LLM_SETTINGS = SETTINGS["llm"]
+AGENT_SETTINGS = SETTINGS["agent"]
 ASSISTANT_PERSONA = str(ASSISTANT_SETTINGS.get("persona", DEFAULT_SETTINGS["assistant"]["persona"])).strip()
 MEMORY_DB = BASE_DIR / "memory.db"
 BROWSER_SETTINGS = SETTINGS.get("browser", DEFAULT_SETTINGS["browser"])

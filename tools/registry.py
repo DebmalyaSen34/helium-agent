@@ -267,7 +267,10 @@ def execute_tool(
                 if not confirm_tool(tool_name, args, permission):
                     return f"Tool '{tool_name}' was cancelled by the user."
 
-            result = tool.function(**args)
+            from core.agent_context import confirm_tool_scope
+
+            with confirm_tool_scope(confirm_tool):
+                result = tool.function(**args)
             return f"Tool '{tool_name}' executed successfully. Result: {result}"
         except Exception as e:
             return f"Error executing tool '{tool_name}': {e}"

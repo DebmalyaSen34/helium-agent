@@ -232,3 +232,19 @@ class HelpCommandHandlerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InvokeSkillTests(unittest.TestCase):
+    @patch("main.print_metrics")
+    @patch("main.print_chat_message")
+    @patch("core.llm.call_llm_once", return_value=("Skill done.", 3))
+    def test_invoke_skill_reports_metrics_without_error(self, mock_llm, mock_print, mock_metrics):
+        from pathlib import Path
+        from skills.loader import Skill
+
+        skill = Skill(name="demo", description="demo skill", trigger="/demo", body="Say done.")
+        main.invoke_skill(skill, "", confirm_tool=None, workspace=Path("."))
+
+        metrics = mock_metrics.call_args.args[0]
+        for key in ("total_time", "tokens", "tps", "tools_used"):
+            self.assertIn(key, metrics)

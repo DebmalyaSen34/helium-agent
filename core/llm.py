@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import json
 
@@ -12,7 +13,8 @@ from config.runtime_config import load_llm_runtime_config
 
 from config.settings import (
     ASSISTANT_PERSONA,
-    API_MODEL
+    API_MODEL,
+    LLM_SETTINGS,
 )
 
 from utils.check_llm_api import hit_api
@@ -142,24 +144,30 @@ class AgenticLoop:
         )
 
 
+CHAT_TEMPLATE_TOKENS = (
+    "<end_of_turn>",
+    "<start_of_turn>",
+    "</start_of_turn>",
+    "</end_of_turn>",
+)
+
+THINK_BLOCK_RE = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)
+
+
 def clean_token(token: str) -> str:
-    tags = [
-        "<end_of_turn>",
-        "<start_of_turn>",
-        "User:",
-        "Current User:",
-        "[Gemma]:",
-        "model\n",
-        "</start_of_turn>",
-        "</end_of_turn>",
-        "<think>",
-        "</think>",
-    ]
-
-    for tag in tags:
+    """Strip chat-template control tokens that some local models leak into text."""
+    for tag in CHAT_TEMPLATE_TOKENS:
         token = token.replace(tag, "")
-
     return token
+
+
+def strip_reasoning(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks (including an unterminated one)."""
+    text = THINK_BLOCK_RE.sub("", text)
+    # A reply can also start mid-reasoning with only the closing tag present.
+    if "</think>" in text:
+        text = text.split("</think>", 1)[1]
+    return text.strip()
 
 
 def stream_openrouter_response(payload: dict, *, api_url: str | None = None, api_key: str | None = None):
@@ -273,13 +281,10 @@ def call_llm_once(messages: list[dict[str, str]]) -> tuple[str, int]:
         "stream_options": {
             "include_usage": True,
         },
-        "stop": [
-            "<end_of_turn>",
-            "<start_of_turn>",
-            "User:",
-            "Current User:",
-        ],
     }
+    stop_sequences = LLM_SETTINGS.get("stop_sequences") or []
+    if stop_sequences:
+        payload["stop"] = list(stop_sequences)
 
     full_reply = ""
     token_count = 0
@@ -295,7 +300,7 @@ def call_llm_once(messages: list[dict[str, str]]) -> tuple[str, int]:
 
         full_reply += clean_token(item)
 
-    return clean_token(full_reply.strip()), token_count
+    return strip_reasoning(clean_token(full_reply)), token_count
 
 
 def execute_agent_tool(
