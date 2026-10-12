@@ -726,7 +726,7 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
         )
     streamed = rendering.reply.finish()
     reply = loop_result.final_answer
-    remember_turn(user_prompt, reply)
+    remember_turn(user_prompt, reply, reasoning=loop_result.final_reasoning)
 
     if reply and not streamed:
         print_chat_message("Helium", reply, style="cyan", markdown=True)
@@ -804,25 +804,42 @@ def ensure_llm_runtime_config() -> bool:
         border_style="cyan",
     ))
 
+    from config.providers import PROVIDERS, normalize_chat_url, provider_for_url
+
+    current_provider = provider_for_url(runtime_config.api_url)
+    provider_name = Prompt.ask(
+        "\n[bold green]1. LLM provider[/bold green]",
+        choices=[*PROVIDERS, "custom"],
+        default=current_provider.name if current_provider else ("custom" if runtime_config.api_url else "openrouter"),
+    ).strip()
+    provider = PROVIDERS.get(provider_name)
+    if provider and provider.note:
+        console.print(f"[dim]{provider.note}[/dim]")
+
+    same_provider = provider is not None and provider == current_provider
     entered_key = Prompt.ask(
-        "\n[bold green]1. Enter your LLM API Key (e.g. OpenRouter key)[/bold green]",
-        default=runtime_config.api_key or "",
+        f"[bold green]2. Enter your {provider_name if provider else 'LLM'} API key[/bold green]",
+        default=(runtime_config.api_key or "") if same_provider or provider is None else "",
+        password=True,
     ).strip()
     if not entered_key:
         console.print("[yellow]Key setup skipped. Agent starting with active environment values.[/yellow]\n")
         return False
 
+    default_url = provider.api_url if provider else (runtime_config.api_url or "")
     entered_url = Prompt.ask(
-        "[bold green]2. Enter LLM API Base URL (including /chat/completions if needed)[/bold green]",
-        default=runtime_config.api_url or "https://openrouter.ai/api/v1/chat/completions",
+        "[bold green]3. API URL (a base URL like https://api.example.com/v1 is fine)[/bold green]",
+        default=default_url,
     ).strip()
+    entered_url = normalize_chat_url(entered_url) or entered_url
+    default_model = (runtime_config.model if same_provider else None) or (provider.default_model if provider else runtime_config.model) or ""
     entered_model = Prompt.ask(
-        "[bold green]3. Enter default LLM Model[/bold green]",
-        default=runtime_config.model or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "[bold green]4. Default model[/bold green]",
+        default=default_model,
     ).strip()
     use_playwright_default = "true" if runtime_config.use_playwright is not False else "false"
     use_playwright = Prompt.ask(
-        "[bold green]4. Enable Playwright browser automation?[/bold green]",
+        "[bold green]5. Enable Playwright browser automation?[/bold green]",
         choices=["true", "false"],
         default=use_playwright_default,
     ).strip()

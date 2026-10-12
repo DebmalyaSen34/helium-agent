@@ -44,6 +44,9 @@ class ModelTurn:
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
     finish_reason: str | None = None
+    # Separate reasoning stream (DeepSeek, Kimi, Qwen...). Never shown to the user,
+    # but some providers require it to be sent back with later tool-call requests.
+    reasoning_content: str = ""
 
 
 class ChatModel(Protocol):
@@ -136,6 +139,7 @@ class OpenAICompatibleModel:
         stop_sequences = LLM_SETTINGS.get("stop_sequences") or []
         if stop_sequences:
             payload["stop"] = list(stop_sequences)
+        payload.update(extra_request_params())
 
         response = hit_api(payload, is_stream=True, api_url=self.api_url, api_key=self.api_key)
         if response is None:
@@ -143,10 +147,7 @@ class OpenAICompatibleModel:
 
         if response.status_code >= 400:
             body = _safe_body(response)
-            auth_or_rate_limit = response.status_code in (401, 402, 403, 429)
-            if tools and not auth_or_rate_limit and (
-                response.status_code in (400, 404, 422) or "tool" in body.lower()
-            ):
+            if tools and looks_like_tools_unsupported(response.status_code, body):
                 raise ToolsUnsupportedError(
                     f"Endpoint rejected tool definitions (HTTP {response.status_code}): {body[:300]}",
                     response.status_code,
@@ -154,6 +155,28 @@ class OpenAICompatibleModel:
             raise LLMRequestError(f"HTTP {response.status_code}: {body[:500]}", response.status_code)
 
         return parse_stream(_iter_sse_data(response.iter_lines()), on_text=on_text)
+
+
+def extra_request_params() -> dict[str, Any]:
+    """Provider-specific request fields from `[llm.extra_params]` (e.g. reasoning_effort)."""
+    from config.settings import LLM_SETTINGS
+
+    extra = LLM_SETTINGS.get("extra_params") or {}
+    return dict(extra) if isinstance(extra, dict) else {}
+
+
+def looks_like_tools_unsupported(status_code: int, body: str) -> bool:
+    """True when an error response means "this endpoint/model can't take `tools`"."""
+    if status_code in (401, 402, 403, 429) or status_code >= 500:
+        return False
+    lowered = body.lower()
+    # Errors about message history (e.g. DeepSeek's missing reasoning_content) are
+    # real request bugs, not a lack of tool support.
+    if "reasoning_content" in lowered:
+        return False
+    if status_code in (404, 422):
+        return True
+    return "tool" in lowered or "function" in lowered
 
 
 def _safe_body(response) -> str:
@@ -183,6 +206,7 @@ def _iter_sse_data(lines) -> Any:
 def parse_stream(events, on_text: TextCallback | None = None) -> ModelTurn:
     """Assemble a ModelTurn from decoded streaming chunks."""
     content_parts: list[str] = []
+    reasoning_parts: list[str] = []
     partial_calls: dict[int, dict[str, str]] = {}
     usage: dict[str, Any] = {}
     finish_reason: str | None = None
@@ -195,6 +219,9 @@ def parse_stream(events, on_text: TextCallback | None = None) -> ModelTurn:
             usage = event["usage"]
         for choice in event.get("choices") or []:
             delta = choice.get("delta") or {}
+            reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+            if isinstance(reasoning, str) and reasoning:
+                reasoning_parts.append(reasoning)
             text = delta.get("content")
             if text:
                 content_parts.append(text)
@@ -219,6 +246,7 @@ def parse_stream(events, on_text: TextCallback | None = None) -> ModelTurn:
         tool_calls=[call for call in tool_calls if call.name],
         usage=usage,
         finish_reason=finish_reason,
+        reasoning_content="".join(reasoning_parts),
     )
 
 

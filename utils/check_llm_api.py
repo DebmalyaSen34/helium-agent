@@ -22,7 +22,11 @@ def hit_api(
         runtime_config = None
         if api_url is None or api_key is None:
             runtime_config = load_llm_runtime_config()
-        url = (api_url or (runtime_config.api_url if runtime_config else None) or "https://openrouter.ai/api/v1/chat/completions").strip()
+        from config.providers import normalize_chat_url
+
+        url = normalize_chat_url(
+            (api_url or (runtime_config.api_url if runtime_config else None) or "https://openrouter.ai/api/v1/chat/completions").strip()
+        )
         key = (api_key or (runtime_config.api_key if runtime_config else None) or "").strip()
         response = requests.post(
             url,

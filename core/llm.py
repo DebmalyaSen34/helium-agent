@@ -20,6 +20,7 @@ from config.settings import (
 
 from core.model_client import (
     ChatModel,
+    LLMRequestError,
     LegacyTextModel,
     ModelTurn,
     OpenAICompatibleModel,
@@ -56,6 +57,7 @@ class AgenticLoopResult:
     observations: list[str]
     usage: dict[str, int] = field(default_factory=dict)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    final_reasoning: str = ""
 
 
 @dataclass
@@ -64,6 +66,17 @@ class _PendingCall:
     name: str
     args: dict[str, Any]
     parse_error: str | None = None
+
+
+def assistant_message(content: str, reasoning: str = "", tool_calls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """An assistant transcript entry. `reasoning_content` is kept when the provider sent one,
+    because DeepSeek-style APIs reject tool requests whose history drops it."""
+    message: dict[str, Any] = {"role": "assistant", "content": content}
+    if reasoning:
+        message["reasoning_content"] = reasoning
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    return message
 
 
 def truncate_observation(text: str, limit: int) -> str:
@@ -133,7 +146,8 @@ class AgenticLoop:
         native = self._use_native()
         messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_content(system_prompt, native)}]
         if history:
-            messages.extend(history)
+            messages.extend(dict(message) for message in history)
+        self._history_len = len(history or [])
         messages.append({"role": "user", "content": self._initial_user_prompt(user_prompt)})
 
         tools_used: list[str] = []
@@ -151,10 +165,10 @@ class AgenticLoop:
                     for call in turn.tool_calls
                 ]
                 messages.append(
-                    {
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": [
+                    assistant_message(
+                        content,
+                        turn.reasoning_content,
+                        [
                             {
                                 "id": call.id,
                                 "type": "function",
@@ -162,7 +176,7 @@ class AgenticLoop:
                             }
                             for call in turn.tool_calls
                         ],
-                    }
+                    )
                 )
                 results = self._run_calls(pending, confirm_tool)
                 for call, result in zip(pending, results):
@@ -174,9 +188,9 @@ class AgenticLoop:
             action_status, action = self._extract_action(content)
 
             if action_status == "none":
-                return self._result(content, "final", tools_used, observations, usage, messages)
+                return self._result(content, "final", tools_used, observations, usage, messages, turn.reasoning_content)
 
-            messages.append({"role": "assistant", "content": content})
+            messages.append(assistant_message(content, turn.reasoning_content))
 
             if action_status == "invalid" or action is None:
                 observation = (
@@ -202,7 +216,7 @@ class AgenticLoop:
         final_answer = strip_reasoning(clean_token(turn.content or ""))
         if not final_answer:
             final_answer = "I reached the tool turn limit before finishing. The task is incomplete."
-        return self._result(final_answer, "max_turns", tools_used, observations, usage, messages)
+        return self._result(final_answer, "max_turns", tools_used, observations, usage, messages, turn.reasoning_content)
 
     # -- model calls ---------------------------------------------------------
 
@@ -230,7 +244,12 @@ class AgenticLoop:
         on_text = self._emit_text if native else None
         try:
             tools = build_openai_tools(self.tool_names) if native else None
-            turn = self.model.complete(messages, tools=tools, on_text=on_text)
+            try:
+                turn = self.model.complete(messages, tools=tools, on_text=on_text)
+            except LLMRequestError as exc:
+                if not self._drop_history_missing_reasoning(messages, exc):
+                    raise
+                turn = self.model.complete(messages, tools=tools, on_text=on_text)
         except ToolsUnsupportedError as exc:
             if self.tool_mode == "native":
                 raise
@@ -246,6 +265,19 @@ class AgenticLoop:
             usage[key] += int((turn.usage or {}).get(key) or 0)
         self._emit("usage", dict(turn.usage or {}))
         return turn, native
+
+    def _drop_history_missing_reasoning(self, messages: list[dict[str, Any]], exc: LLMRequestError) -> bool:
+        """DeepSeek rejects tool requests when earlier assistant turns lack reasoning_content
+        (e.g. they came from another model). Drop that prior-session history once and retry."""
+        if isinstance(exc, ToolsUnsupportedError) or "reasoning_content" not in str(exc):
+            return False
+        history_len = getattr(self, "_history_len", 0)
+        if not history_len:
+            return False
+        logger.info("Dropping %d earlier history messages that lack reasoning_content.", history_len)
+        del messages[1 : 1 + history_len]
+        self._history_len = 0
+        return True
 
     # -- tool execution ------------------------------------------------------
 
@@ -280,7 +312,10 @@ class AgenticLoop:
 
     def _compact(self, messages: list[dict[str, Any]]) -> None:
         """Elide the oldest tool outputs once the transcript exceeds the budget."""
-        total = sum(len(str(message.get("content") or "")) for message in messages)
+        total = sum(
+            len(str(message.get("content") or "")) + len(str(message.get("reasoning_content") or ""))
+            for message in messages
+        )
         if total <= self.context_budget_chars:
             return
         protected_tail = 4
@@ -309,7 +344,7 @@ class AgenticLoop:
     def _emit_text(self, text: str) -> None:
         self._emit("text_delta", text)
 
-    def _result(self, answer, stop_reason, tools_used, observations, usage, messages) -> AgenticLoopResult:
+    def _result(self, answer, stop_reason, tools_used, observations, usage, messages, reasoning="") -> AgenticLoopResult:
         return AgenticLoopResult(
             final_answer=answer,
             stop_reason=stop_reason,
@@ -317,6 +352,7 @@ class AgenticLoop:
             observations=observations,
             usage=dict(usage),
             messages=messages,
+            final_reasoning=reasoning or "",
         )
 
     def _extract_action(self, reply: str) -> tuple[str, dict[str, Any] | None]:
@@ -568,7 +604,7 @@ def run_agent(
     return result
 
 
-def remember_turn(user_prompt: str, reply: str, *, persist: bool = True) -> None:
+def remember_turn(user_prompt: str, reply: str, *, persist: bool = True, reasoning: str = "") -> None:
     """Append a finished exchange to the conversation history (and the workspace memory)."""
     global conversation_history
 
@@ -579,7 +615,7 @@ def remember_turn(user_prompt: str, reply: str, *, persist: bool = True) -> None
         record_turn("assistant", reply)
 
     conversation_history.append({"role": "user", "content": user_prompt})
-    conversation_history.append({"role": "assistant", "content": reply})
+    conversation_history.append(assistant_message(reply, reasoning))
     if len(conversation_history) > MAX_HISTORY:
         conversation_history[:] = conversation_history[-MAX_HISTORY:]
 
@@ -639,7 +675,7 @@ def generate_response(
         if reply:
             yield reply
 
-        remember_turn(prompt, reply)
+        remember_turn(prompt, reply, reasoning=loop_result.final_reasoning)
 
         end_time = time.time()
         total_time = end_time - start_time

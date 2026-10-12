@@ -156,6 +156,25 @@ http://127.0.0.1:3000/v1/chat/completions
 
 For Ollama use `http://localhost:11434/v1/chat/completions` (not the native `/api/chat` endpoint).
 
+### Use DeepSeek
+
+Run `helium`, pick `deepseek` in the setup wizard, and paste your key from the [DeepSeek platform](https://platform.deepseek.com/api_keys). The wizard fills in `https://api.deepseek.com/chat/completions` and the `deepseek-flash` model. Switch to `deepseek-v4-pro` any time with `/model deepseek-v4-pro --save`.
+
+Or configure it with environment variables (a base URL is fine):
+
+```bash
+export LLM_API_URL=https://api.deepseek.com
+export LLM_MODEL=deepseek-flash
+export DEEPSEEK_API_KEY=sk-...   # or LLM_API_KEY
+```
+
+DeepSeek runs in thinking mode by default. Helium keeps the model's reasoning hidden but sends it back with tool-call requests, as the DeepSeek API requires. To change how hard it thinks, set it in [`config/settings.toml`](config/settings.toml):
+
+```toml
+[llm.extra_params]
+reasoning_effort = "high"   # none | low | high | max
+```
+
 ### Use LLM API
 
 Run `helium` and follow the setup wizard. The API key, URL, model, and Playwright toggle are saved to `config.toml` in your user Helium config directory, readable only by your user (`chmod 600`).

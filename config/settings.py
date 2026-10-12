@@ -35,6 +35,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "context_budget_chars": 300_000,
         "max_tool_output_chars": 12_000,
         "stop_sequences": [],
+        # Extra provider-specific request fields, e.g. {"reasoning_effort": "high"} for DeepSeek.
+        "extra_params": {},
     },
     "agent": {
         "chat_max_turns": 12,

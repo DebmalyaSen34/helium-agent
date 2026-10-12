@@ -32,6 +32,10 @@ context_budget_chars = 300000
 max_tool_output_chars = 12000
 stop_sequences = []
 
+# Provider-specific request fields sent with every chat request.
+# DeepSeek example: reasoning_effort = "high"   (none | low | high | max)
+[llm.extra_params]
+
 [agent]
 chat_max_turns = 12
 code_max_turns = 40

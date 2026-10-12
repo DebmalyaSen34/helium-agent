@@ -129,6 +129,7 @@ class RuntimeConfigStore:
         self._apply_user_config(loaded, sources, user_config)
         if include_legacy:
             self._apply_legacy(loaded, sources)
+        self._apply_provider_key_env(loaded, sources)
 
         return LlmRuntimeConfig(
             api_key=loaded["api_key"],
@@ -234,6 +235,20 @@ class RuntimeConfigStore:
             if loaded.get(field) is None:
                 loaded[field] = value
                 sources[field] = "legacy_env"
+
+    def _apply_provider_key_env(self, loaded: dict[str, Any], sources: dict[str, str]) -> None:
+        """Fall back to a provider's own key variable, e.g. DEEPSEEK_API_KEY for api.deepseek.com."""
+        if loaded.get("api_key"):
+            return
+        from config.providers import provider_for_url
+
+        provider = provider_for_url(loaded.get("api_url"))
+        if provider is None or not provider.key_env:
+            return
+        value = _clean_string(os.environ.get(provider.key_env))
+        if value is not None:
+            loaded["api_key"] = value
+            sources["api_key"] = f"env:{provider.key_env}"
 
     def _apply_env(self, loaded: dict[str, Any], sources: dict[str, str]) -> None:
         env_map = {

@@ -93,6 +93,7 @@ class StartupCheckTests(unittest.TestCase):
         )
         mock_check.return_value = False
         mock_prompt.side_effect = [
+            "custom",
             "secret-key",
             "https://api.example/v1/chat/completions",
             "runtime-model",
@@ -106,6 +107,41 @@ class StartupCheckTests(unittest.TestCase):
             api_url="https://api.example/v1/chat/completions",
             model="runtime-model",
             use_playwright=True,
+        )
+
+
+    @patch("main.parse_legacy_env_file")
+    @patch("main.save_llm_runtime_config")
+    @patch("main.Prompt.ask")
+    @patch("main.load_llm_runtime_config")
+    @patch("main.check_llm_api")
+    def test_setup_wizard_deepseek_preset_normalizes_url(self, mock_check, mock_load, mock_prompt, mock_save, mock_parse_legacy):
+        from config.runtime_config import LlmRuntimeConfig
+        from main import ensure_llm_runtime_config
+
+        mock_parse_legacy.return_value = {}
+        mock_load.return_value = LlmRuntimeConfig(api_key=None, api_url=None, model=None, use_playwright=None, sources={})
+        mock_check.return_value = False
+
+        def answer(prompt, *args, **kwargs):
+            if "provider" in prompt:
+                return "deepseek"
+            if "API key" in prompt:
+                return "sk-test"
+            if "API URL" in prompt:
+                return "https://api.deepseek.com"
+            if "model" in prompt:
+                return kwargs["default"]
+            return "false"
+
+        mock_prompt.side_effect = answer
+
+        self.assertTrue(ensure_llm_runtime_config())
+        mock_save.assert_called_once_with(
+            api_key="sk-test",
+            api_url="https://api.deepseek.com/chat/completions",
+            model="deepseek-flash",
+            use_playwright=False,
         )
 
 
