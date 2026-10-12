@@ -183,3 +183,34 @@ class CodingWorkflowRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CodingWorkflowTrackingTests(unittest.TestCase):
+    def test_edit_file_and_run_tests_are_tracked_only_on_success(self):
+        replies = iter(
+            [
+                '<action>{"tool": "edit_file", "args": {"path": "a.py", "edits": [{"old": "x", "new": "y"}]}}</action>',
+                '<action>{"tool": "edit_file", "args": {"path": "b.py", "edits": [{"old": "x", "new": "y"}]}}</action>',
+                '<action>{"tool": "run_tests", "args": {"command": "pytest -q"}}</action>',
+                "Changed files:\n- a.py\n\nVerification:\n- pytest -q\n\nRemaining risks:\n- None",
+            ]
+        )
+
+        def execute_tool_call(action, confirm_tool=None):
+            if action["args"].get("path") == "b.py":
+                return "status: error\noperation: edit_file"
+            return "status: success"
+
+        result = run_coding_workflow(
+            "edit things",
+            ask_model=lambda messages: next(replies),
+            execute_tool_call=execute_tool_call,
+            confirm_tool=lambda *_: True,
+            max_turns=5,
+        )
+        self.assertEqual(result.changed_files, ["a.py"])
+        self.assertEqual(result.verification_commands, ["pytest -q"])
+
+    def test_prompt_includes_project_snapshot(self):
+        prompt = build_coding_system_prompt("task", project_context="Git status:\n## main")
+        self.assertIn("<project_snapshot>", prompt)
+        self.assertIn("edit_file", prompt)

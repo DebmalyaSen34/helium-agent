@@ -14,6 +14,8 @@ from tools.file_ops import (
     create_file,
     delete_file,
     diff_text,
+    edit_file,
+    glob_files,
     list_directory,
     mkdir,
     move_file,
@@ -26,6 +28,8 @@ from tools.file_ops import (
     write_file,
 )
 from tools.bash_ops import execute_bash, is_command_safe
+from tools.git_ops import git_diff, git_log, git_status
+from tools.test_runner import run_tests
 from tools.search.browse_url import browse_url
 from tools.web_search import search_web
 from tools.research.pipeline import research_query
@@ -79,9 +83,47 @@ AVAILABLE_TOOLS: dict[str, ToolDefinition] = {
     # ── file tools ────────────────────────────────────────────────────────
     "read_file": ToolDefinition(
         read_file,
-        "Reads a UTF-8 text file inside the project root.",
+        "Reads a UTF-8 text file inside the project root. Output lines are prefixed with their line number "
+        "and a tab; the prefix is not part of the file content.",
         "safe",
-        {"start_line": "1-based first line to read", "end_line": "1-based last line to read (inclusive)"},
+        {
+            "start_line": "1-based first line to read",
+            "end_line": "1-based last line to read (inclusive)",
+            "line_numbers": "prefix each line with its number (default true)",
+        },
+    ),
+    "edit_file": ToolDefinition(
+        edit_file,
+        "Edits an existing file by applying one or more exact text replacements atomically. "
+        "Each 'old' must match the file exactly once (include surrounding lines for uniqueness) "
+        "unless replace_all is true. If any edit fails, nothing is written. Preferred tool for changing code.",
+        "risky",
+        parameters=_object_schema(
+            {
+                "path": {"type": "string"},
+                "edits": {
+                    "type": "array",
+                    "description": "replacements applied in order",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old": {"type": "string", "description": "exact existing text, without line-number prefixes"},
+                            "new": {"type": "string", "description": "replacement text"},
+                            "replace_all": {"type": "boolean", "default": False},
+                        },
+                        "required": ["old", "new"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            ["path", "edits"],
+        ),
+    ),
+    "glob_files": ToolDefinition(
+        glob_files,
+        "Finds project files by glob pattern (e.g. **/*.py, src/**/test_*.ts), newest first. "
+        "Skips .git, virtualenvs, node_modules, and gitignored files.",
+        "safe",
     ),
     "write_file": ToolDefinition(
         write_file,
@@ -100,9 +142,14 @@ AVAILABLE_TOOLS: dict[str, ToolDefinition] = {
     "list_directory": ToolDefinition(list_directory, "Lists files and directories inside the project root.", "safe"),
     "search_text": ToolDefinition(
         search_text,
-        "Searches UTF-8 text files inside the project root for a literal string.",
+        "Searches project text files for a string or regular expression and returns file:line:text matches. "
+        "Skips .git, virtualenvs, node_modules, and gitignored files.",
         "safe",
-        {"glob": "optional filename pattern such as *.py"},
+        {
+            "glob": "optional filename pattern such as *.py",
+            "regex": "treat query as a Python regular expression",
+            "context_lines": "lines of context to show around each match",
+        },
     ),
     "replace_text": ToolDefinition(
         replace_text,
@@ -122,6 +169,21 @@ AVAILABLE_TOOLS: dict[str, ToolDefinition] = {
     ),
     "diff_text": ToolDefinition(diff_text, "Previews a unified diff between a project file and proposed content without modifying it.", "safe"),
     "create_file": ToolDefinition(create_file, "Backwards-compatible alias for write_file(filename, content).", "risky"),
+    # ── git and tests ────────────────────────────────────────────────────
+    "git_status": ToolDefinition(git_status, "Shows the current branch and changed or untracked files.", "safe"),
+    "git_diff": ToolDefinition(
+        git_diff,
+        "Shows the unified diff of uncommitted changes, optionally for one path or only staged changes.",
+        "safe",
+    ),
+    "git_log": ToolDefinition(git_log, "Lists recent commits, one per line.", "safe"),
+    "run_tests": ToolDefinition(
+        run_tests,
+        "Runs the project's tests and returns the exit code and output. With no command it auto-detects "
+        "pytest, npm test, cargo test, or go test. Pass a focused command to run a subset.",
+        "risky",
+        {"command": "explicit test command, e.g. 'pytest tests/test_parser.py -q'", "timeout": "seconds (max 600)"},
+    ),
     # ── web and research ─────────────────────────────────────────────────
     "search_web": ToolDefinition(
         search_web,
@@ -208,8 +270,10 @@ AVAILABLE_TOOLS: dict[str, ToolDefinition] = {
 TOOL_POLICY = """<tool_policy>
 <file_tools>
 File tools are restricted to the current project root; .git is protected.
-Use file tools instead of execute_bash for reading, searching, and editing files.
-Read a file before editing it. Prefer targeted edits over full rewrites.
+Use file tools instead of execute_bash for reading, searching, and editing files:
+glob_files to find files, search_text to find code, read_file to read it, edit_file to change it.
+Read a file before editing it. Prefer edit_file over full rewrites; use write_file for new files.
+read_file prefixes lines with numbers; never include those prefixes in edit text.
 delete_file permanently deletes after user confirmation.
 </file_tools>
 

@@ -269,8 +269,21 @@ def _format_confirm_args(tool_name: str, args: dict) -> list:
     return renderables
 
 
+def _approval_key(tool_name: str, args: dict) -> str:
+    """Session "always allow" scope: the exact command for shell tools, else the tool."""
+    if tool_name in ("execute_bash", "run_tests"):
+        return f"{tool_name}:{args.get('command') or ''}"
+    return tool_name
+
+
 def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     if not ASSISTANT_SETTINGS.get("confirm_risky_tools", True):
+        return True
+
+    from core.session import SESSION
+
+    approval_key = _approval_key(tool_name, args)
+    if approval_key in SESSION.allow_list:
         return True
 
     global _active_status
@@ -285,11 +298,14 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
         header.append(permission, style="yellow")
         body = Group(header, *_format_confirm_args(tool_name, args))
         console.print(app_panel(body, title="Confirm Tool", border_style="yellow"))
-        answer = Prompt.ask("Allow tool?", choices=["y", "n"], default="n")
+        answer = Prompt.ask("Allow tool? (a = always this session)", choices=["y", "n", "a"], default="n")
     finally:
         if _active_status is not None:
             _active_status.start()
 
+    if answer == "a":
+        SESSION.allow_list.add(approval_key)
+        return True
     return answer == "y"
 
 

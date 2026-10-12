@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
+import subprocess
 import tempfile
 import difflib
 import fnmatch
@@ -20,6 +22,30 @@ from tools.file_models import (
     NoTextFileError,
     UnsafeOperationError
 )
+IGNORED_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        "env",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        ".cache",
+        "dist",
+        "build",
+        ".next",
+        "target",
+    }
+)
+MAX_SEARCH_FILE_BYTES = 1_000_000
+
+
 @dataclass(frozen=True)
 class ResolvedProjectPath:
     absolute_path: Path
@@ -69,6 +95,7 @@ class FileOperationService:
         start_line: int | None = None,
         end_line: int | None = None,
         max_chars: int = 20000,
+        line_numbers: bool = False,
     ) -> FileOperationResult:
         resolved = self.resolve_project_path(path)
         if not resolved.absolute_path.is_file():
@@ -78,11 +105,18 @@ class FileOperationService:
         except UnicodeDecodeError as exc:
             raise NoTextFileError("file is not valid UTF-8 text") from exc
 
+        start = 0
         if start_line is not None or end_line is not None:
             lines = content.splitlines(keepends=True)
             start = 0 if start_line is None else max(start_line - 1, 0)
             end = None if end_line is None else max(end_line, start)
             content = "".join(lines[start:end])
+
+        if line_numbers:
+            content = "".join(
+                f"{number:>6}\t{line}"
+                for number, line in enumerate(content.splitlines(keepends=True), start=start + 1)
+            )
 
         truncated = content[:max_chars]
         suffix = "" if len(content) <= max_chars else f"\n[truncated at {max_chars} chars]"
@@ -346,6 +380,39 @@ class FileOperationService:
             details="\n".join(entries) + truncated,
         )
 
+    def _iter_project_files(self, base: Path) -> list[Path]:
+        """Files under `base`, honouring .gitignore when inside a git repo."""
+        if base.is_file():
+            return [base]
+        tracked = self._git_listed_files(base)
+        if tracked is not None:
+            return tracked
+        files: list[Path] = []
+        for root, dirs, filenames in os.walk(base):
+            dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS)
+            for name in sorted(filenames):
+                files.append(Path(root) / name)
+        return files
+
+    def _git_listed_files(self, base: Path) -> list[Path] | None:
+        try:
+            completed = subprocess.run(
+                ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."],
+                cwd=str(base),
+                capture_output=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if completed.returncode != 0:
+            return None
+        names = [name for name in completed.stdout.decode("utf-8", errors="replace").split("\0") if name]
+        return sorted(
+            base / name
+            for name in names
+            if not any(part in IGNORED_DIRS for part in Path(name).parts)
+        )
+
     def search_text(
         self,
         query: str,
@@ -353,17 +420,34 @@ class FileOperationService:
         glob: str | None = None,
         case_sensitive: bool = False,
         max_matches: int = 100,
+        regex: bool = False,
+        context_lines: int = 0,
     ) -> FileOperationResult:
         resolved = self.resolve_project_path(path)
         if not resolved.absolute_path.exists():
             raise FileNotFoundForOperationError("path does not exist")
-        files = [resolved.absolute_path] if resolved.absolute_path.is_file() else sorted(resolved.absolute_path.rglob("*"))
+        files = self._iter_project_files(resolved.absolute_path)
 
-        needle = query if case_sensitive else query.casefold()
+        if regex:
+            try:
+                pattern = re.compile(query, 0 if case_sensitive else re.IGNORECASE)
+            except re.error as exc:
+                raise UnsafeOperationError(f"invalid regular expression: {exc}") from exc
+
+            def matches_line(line: str) -> bool:
+                return pattern.search(line) is not None
+        else:
+            needle = query if case_sensitive else query.casefold()
+
+            def matches_line(line: str) -> bool:
+                return needle in (line if case_sensitive else line.casefold())
+
+        context_lines = max(0, int(context_lines))
         matches: list[str] = []
+        match_count = 0
         skipped = 0
         for file_path in files:
-            if len(matches) >= max_matches:
+            if match_count >= max_matches:
                 break
             if not file_path.is_file():
                 continue
@@ -371,30 +455,121 @@ class FileOperationService:
                 relative = file_path.resolve().relative_to(self.project_root).as_posix()
             except ValueError:
                 continue
-            if glob is not None and not fnmatch.fnmatch(relative, glob):
+            if glob is not None and not fnmatch.fnmatch(relative, glob) and not fnmatch.fnmatch(file_path.name, glob):
                 continue
             try:
+                if file_path.stat().st_size > MAX_SEARCH_FILE_BYTES:
+                    skipped += 1
+                    continue
                 lines = file_path.read_text(encoding="utf-8").splitlines()
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, OSError):
                 skipped += 1
                 continue
+            last_printed = 0
             for line_number, line in enumerate(lines, start=1):
-                haystack = line if case_sensitive else line.casefold()
-                if needle in haystack:
+                if not matches_line(line):
+                    continue
+                match_count += 1
+                if context_lines:
+                    first = max(line_number - context_lines, last_printed + 1)
+                    last = min(line_number + context_lines, len(lines))
+                    if matches and first > last_printed + 1:
+                        matches.append("--")
+                    for number in range(first, last + 1):
+                        separator = ":" if number == line_number else "-"
+                        matches.append(f"{relative}{separator}{number}{separator}{lines[number - 1]}")
+                    last_printed = last
+                else:
                     matches.append(f"{relative}:{line_number}:{line}")
-                    if len(matches) >= max_matches:
-                        break
+                if match_count >= max_matches:
+                    break
 
         details = "\n".join(matches)
         if skipped:
-            details += f"\n[skipped {skipped} non-text files]"
-        if len(matches) >= max_matches:
+            details += f"\n[skipped {skipped} non-text or oversized files]"
+        if match_count >= max_matches:
             details += f"\n[truncated at {max_matches} matches]"
         return FileOperationResult(
             status="success",
             operation="search_text",
             path=resolved.display_path,
             details=details,
+        )
+
+    def glob_files(self, pattern: str, path: str = ".", max_results: int = 200) -> FileOperationResult:
+        resolved = self.resolve_project_path(path)
+        if not resolved.absolute_path.is_dir():
+            raise FileNotFoundForOperationError("directory does not exist")
+        if not pattern.strip():
+            raise UnsafeOperationError("pattern must not be empty")
+
+        found: list[tuple[float, str]] = []
+        for file_path in self._iter_project_files(resolved.absolute_path):
+            try:
+                relative_to_base = file_path.relative_to(resolved.absolute_path).as_posix()
+                relative = file_path.resolve().relative_to(self.project_root).as_posix()
+            except ValueError:
+                continue
+            candidate = Path(relative_to_base)
+            if not (candidate.match(pattern) or fnmatch.fnmatch(relative_to_base, pattern)):
+                continue
+            try:
+                found.append((file_path.stat().st_mtime, relative))
+            except OSError:
+                continue
+
+        found.sort(key=lambda item: (-item[0], item[1]))
+        names = [name for _, name in found[:max_results]]
+        details = "\n".join(names) if names else "no files matched"
+        if len(found) > max_results:
+            details += f"\n[truncated at {max_results} of {len(found)} files]"
+        return FileOperationResult(
+            status="success",
+            operation="glob_files",
+            path=resolved.display_path,
+            details=details,
+        )
+
+    def edit_file(self, path: str, edits: list[dict]) -> FileOperationResult:
+        """Apply several exact-match replacements atomically; nothing is written on any failure."""
+        if not isinstance(edits, list) or not edits:
+            raise UnsafeOperationError("edits must be a non-empty list of {old, new} objects")
+        resolved = self.resolve_project_path(path)
+        if not resolved.absolute_path.is_file():
+            raise FileNotFoundForOperationError("file does not exist")
+        try:
+            content = resolved.absolute_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise NoTextFileError("file is not valid UTF-8 text") from exc
+
+        updated = content
+        total = 0
+        for index, edit in enumerate(edits, start=1):
+            if not isinstance(edit, dict) or "old" not in edit or "new" not in edit:
+                raise UnsafeOperationError(f"edit {index} must have 'old' and 'new' keys")
+            old, new = str(edit["old"]), str(edit["new"])
+            replace_all = bool(edit.get("replace_all", False))
+            if old == "":
+                raise UnsafeOperationError(f"edit {index}: 'old' must not be empty")
+            if old == new:
+                raise UnsafeOperationError(f"edit {index}: 'old' and 'new' are identical")
+            count = updated.count(old)
+            if count == 0:
+                raise UnsafeOperationError(f"edit {index}: 'old' text not found (no changes written)")
+            if count > 1 and not replace_all:
+                raise UnsafeOperationError(
+                    f"edit {index}: 'old' text matches {count} places; add surrounding context "
+                    "or set replace_all=true (no changes written)"
+                )
+            updated = updated.replace(old, new) if replace_all else updated.replace(old, new, 1)
+            total += count if replace_all else 1
+
+        self.write_file(path, updated)
+        return FileOperationResult(
+            status="success",
+            operation="edit_file",
+            path=resolved.display_path,
+            details=f"applied {len(edits)} edit(s), {total} replacement(s)",
         )
 
     def replace_text(

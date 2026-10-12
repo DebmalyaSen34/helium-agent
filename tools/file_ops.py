@@ -52,8 +52,18 @@ def create_file(filename: str, content: str) -> str:
     return write_file(filename, content, mode="overwrite")
 
 
-def read_file(path: str, start_line: int | None = None, end_line: int | None = None, max_chars: int = 20000) -> str:
-    return _run("read_file", path, lambda service: service.read_file(path, start_line, end_line, max_chars))
+def read_file(
+    path: str,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    max_chars: int = 20000,
+    line_numbers: bool = True,
+) -> str:
+    return _run(
+        "read_file",
+        path,
+        lambda service: service.read_file(path, start_line, end_line, max_chars, line_numbers),
+    )
 
 
 def write_file(path: str, content: str, mode: str = "overwrite") -> str:
@@ -104,12 +114,26 @@ def search_text(
     glob: str | None = None,
     case_sensitive: bool = False,
     max_matches: int = 100,
+    regex: bool = False,
+    context_lines: int = 0,
 ) -> str:
     return _run(
         "search_text",
         path,
-        lambda service: service.search_text(query, path, glob, case_sensitive, max_matches),
+        lambda service: service.search_text(query, path, glob, case_sensitive, max_matches, regex, context_lines),
     )
+
+
+def glob_files(pattern: str, path: str = ".", max_results: int = 200) -> str:
+    return _run("glob_files", path, lambda service: service.glob_files(pattern, path, max_results))
+
+
+def edit_file(path: str, edits: list[dict]) -> str:
+    old = _read_before(path)
+    result = _run("edit_file", path, lambda service: service.edit_file(path, edits))
+    if "success" in result:
+        display_file_change("edit_file", path, old, _read_before(path))
+    return result
 
 
 def replace_text(path: str, old: str, new: str, expected_count: int | None = None) -> str:
