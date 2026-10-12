@@ -2,31 +2,11 @@ import atexit
 import logging
 import os
 import re
-import select
 import sys
 import argparse
 from pathlib import Path
 from typing import Any
 
-try:
-    import openwakeword
-    import speech_recognition as sr
-    from kokoro import KPipeline
-    from openwakeword.model import Model
-    HAS_VOICE_DEP = True
-except ImportError:
-    HAS_VOICE_DEP = False
-    openwakeword = None
-    class DummySpeechRecognition:
-        class Recognizer:
-            pass
-        class WaitTimeoutError(Exception):
-            pass
-        class UnknownValueError(Exception):
-            pass
-    sr = DummySpeechRecognition
-    KPipeline = None
-    Model = None
 from rich import box
 from rich.console import Console, Group
 from rich.logging import RichHandler
@@ -38,7 +18,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS
+from config.settings import ASSISTANT_SETTINGS
 from core.llm import generate_response
 from core.coding_workflow import run_coding_workflow
 from tools.research.pipeline import research_query
@@ -52,27 +32,11 @@ from config.runtime_config import (
     save_llm_runtime_config,
 )
 from utils.system_check import check_llm_api
-try:
-    from engine.stt import build_speech_config, speech_to_text
-    from engine.tts import text_to_speech
-    from engine.wake_word import build_wake_config, calibrate_microphone, wake_word_detection
-    HAS_VOICE_ENGINES = True
-except ImportError:
-    HAS_VOICE_ENGINES = False
-    build_speech_config = None
-    speech_to_text = None
-    text_to_speech = None
-    build_wake_config = None
-    calibrate_microphone = None
-    wake_word_detection = None
 from rag_service.client import RagServiceClient
 from rag_service.config import load_config as load_rag_service_config
 from rag_service.models import RagError
 from rag_service.terminal import resolve_single_mention
 from utils.start_animation import render_startup_intro
-from utils.audio import play_status_sound
-from utils.health import run_startup_health_checks
-from utils.history import last_heard, record_command
 from tools.file_ops import set_project_root
 from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.history import FileHistory
@@ -113,11 +77,11 @@ def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
     )
 
 
-def print_header(mode: str) -> None:
+def print_header() -> None:
     console.print()
     render_startup_intro()
     console.rule(
-        f"[bold cyan]HELIUM AGENT[/bold cyan] [dim]{mode} mode / local assistant[/dim]",
+        "[bold cyan]HELIUM AGENT[/bold cyan] [dim]local assistant[/dim]",
         style="bright_black",
     )
 
@@ -145,7 +109,7 @@ def set_state(state: str, detail: str | None = None) -> None:
 
 
 def print_chat_message(speaker: str, message: str, *, style: str, markdown: bool = False) -> None:
-    if speaker in {"You", "Heard"}:
+    if speaker == "You":
         text = Text()
         text.append(f"{speaker} ", style=f"bold {style}")
         text.append("> ", style="dim")
@@ -258,16 +222,6 @@ def stream_reply(reply_generator) -> str:
     return full_reply
 
 
-def stdin_pressed() -> bool:
-    if not sys.stdin.isatty():
-        return False
-    ready, _, _ = select.select([sys.stdin], [], [], 0)
-    if not ready:
-        return False
-    sys.stdin.readline()
-    return True
-
-
 def _format_confirm_args(tool_name: str, args: dict) -> list:
     """Build rich renderables for tool args — syntax-highlighted where possible."""
     renderables = []
@@ -338,36 +292,6 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
 
     return answer == "y"
 
-
-def capture_command(
-    recognizer: sr.Recognizer,
-    speech_config,
-    *,
-    follow_up: bool = False,
-) -> str | None:
-    attempts = max(1, speech_config.retry_attempts + 1)
-    timeout = speech_config.follow_up_timeout_seconds if follow_up else speech_config.timeout_seconds
-
-    for attempt in range(attempts):
-        result = speech_to_text(
-            recognizer,
-            speech_config,
-            timeout_seconds=timeout,
-            status_label="Follow-up" if follow_up else "Listening",
-        )
-        transcript = Text(result.text or "No speech detected.", style="white")
-        transcript.append(f"\nAudio {result.audio_seconds:.1f}s / RMS {result.rms:.3f}", style="dim")
-        print_chat_message("Heard", transcript.plain, style="blue")
-
-        if result.text:
-            record_command(result.text)
-            return result.text
-
-        if attempt < attempts - 1:
-            console.print("[yellow]I didn't catch that. Listening one more time...[/yellow]")
-            play_status_sound("wake")
-
-    return None
 
 def parse_code_command(user_text: str) -> str | None:
     stripped = user_text.strip()
@@ -653,36 +577,6 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
     print_metrics(metrics)
 
 
-def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
-    normalized = user_text.strip().lower()
-
-    if normalized in {"stop", "cancel", "never mind", "nevermind"}:
-        console.print("[dim]Cancelled. Going back to sleep.[/dim]")
-        return True
-
-    if "what did you hear" in normalized or "what was the last command" in normalized:
-        heard = last_heard()
-        reply = f"The last thing I heard was: {heard}" if heard else "I do not have any command history yet."
-        print_chat_message("Helium", reply, style="cyan")
-        text_to_speech(pipeline, [reply], target_voice, interrupt_checker=stdin_pressed)
-        return True
-
-    return False
-
-
-def print_health_checks() -> None:
-    set_state("Health check")
-    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
-    table.add_column("Status", width=8)
-    table.add_column("Check")
-    table.add_column("Detail", style="dim")
-    for check in run_startup_health_checks():
-        style = "green" if check.ok else "yellow"
-        label = "OK" if check.ok else "WARN"
-        table.add_row(f"[{style}]{label}[/{style}]", check.name, check.detail)
-    console.print(app_panel(table, title="Health", border_style="green"))
-
-
 def prepare_rag_prompt(user_text: str) -> str:
     config = load_rag_service_config()
     if not config.enabled or "@" not in user_text:
@@ -781,7 +675,7 @@ def ensure_llm_runtime_config() -> bool:
         return False
 
 
-def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
+def main(target_path: str = ".", nuclear: bool = False):
     workspace = Path(target_path).resolve()
     os.chdir(workspace)
     set_project_root(workspace)
@@ -798,182 +692,52 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
     atexit.register(shutdown_session)
     console.print(f"[dim]:: [Session] Persistent memory initialized for {workspace}.[/dim]")
 
-    if mode == "text":
-        print_header("text")
+    print_header()
 
-        # Discover skills from user and project directories
-        discovered_skills = discover_skills(workspace)
-        if discovered_skills:
-            slash_count = sum(1 for s in discovered_skills if s.trigger)
-            ctx_count = len(discovered_skills) - slash_count
-            parts = []
-            if slash_count:
-                parts.append(f"{slash_count} slash command{'s' if slash_count != 1 else ''}")
-            if ctx_count:
-                parts.append(f"{ctx_count} contextual skill{'s' if ctx_count != 1 else ''}")
-            console.print(f"[dim]:: [Skills] Loaded {' + '.join(parts)}.[/dim]")
+    # Discover skills from user and project directories
+    discovered_skills = discover_skills(workspace)
+    if discovered_skills:
+        slash_count = sum(1 for s in discovered_skills if s.trigger)
+        ctx_count = len(discovered_skills) - slash_count
+        parts = []
+        if slash_count:
+            parts.append(f"{slash_count} slash command{'s' if slash_count != 1 else ''}")
+        if ctx_count:
+            parts.append(f"{ctx_count} contextual skill{'s' if ctx_count != 1 else ''}")
+        console.print(f"[dim]:: [Skills] Loaded {' + '.join(parts)}.[/dim]")
 
-        console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
+    console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
 
-        prompt_session = PromptSession(
-            history=FileHistory(".helium_history"),
-            completer=WorkspaceFileCompleter(skills=discovered_skills),
-            complete_while_typing=True
-        )
-        
-        while True:
-            try:
-                user_text = prompt_session.prompt(HTML("\n<b><green>You</green></b> > ")).strip()
-                if not user_text:
-                    continue
-                if user_text.lower() in {"quit", "exit", "stop"}:
-                    print_goodbye()
-                    break
-
-                reset_state()
-                record_command(user_text)
-                if handle_skill_management_command(user_text, workspace, discovered_skills):
-                    continue
-                if handle_help_command(user_text, discovered_skills):
-                    continue
-                # Check for skill trigger match
-                skill_match = match_skill_trigger(user_text, discovered_skills)
-                if skill_match:
-                    skill, skill_args = skill_match
-                    invoke_skill(skill, skill_args, confirm_tool, workspace)
-                    continue
-                if handle_code_command(user_text, confirm_tool=confirm_tool):
-                    continue
-                if handle_deep_research_command(user_text):
-                    continue
-                metrics: dict[str, Any] = {}
-                sources: list[dict[str, str]] = []
-
-                def collect_tool_result(tool_name: str, tool_result: str) -> None:
-                    if tool_name == "search_web":
-                        sources.extend(extract_web_sources(tool_result))
-
-                try:
-                    llm_prompt = prepare_rag_prompt(user_text)
-                except RagError as exc:
-                    set_state("Attachment error")
-                    print_chat_message("Error", exc.message, style="red")
-                    continue
-
-                with console.status("[cyan]Thinking...[/cyan]", spinner="dots") as status:
-                    global _active_status
-                    _active_status = status
-                    def set_state_spinner(state: str):
-                        if "Using" in state or "Attachment" in state:
-                            status.update(f"[yellow]{state}...[/yellow]")
-                        elif "Responding" in state:
-                            status.update("[green]Responding...[/green]")
-                        elif "Thinking" in state:
-                            status.update("[cyan]Thinking...[/cyan]")
-                        else:
-                            status.update(f"[dim]:: {state}[/dim]")
-
-                    try:
-                        reply_generator = generate_response(
-                            llm_prompt,
-                            confirm_tool=confirm_tool,
-                            on_state=set_state_spinner,
-                            on_metrics=metrics.update,
-                            on_tool_result=collect_tool_result,
-                            print_metrics=False,
-                            skills=discovered_skills,
-                        )
-                        reply_list = list(reply_generator)
-                    finally:
-                        _active_status = None
-                
-                stream_reply(reply_list)
-                print_sources(sources)
-                if metrics:
-                    print_metrics(metrics)
-                
-            except KeyboardInterrupt:
-                print_goodbye()
-                break
-            except EOFError:
-                print_goodbye()
-                break
-            except Exception as e:
-                set_state("Error")
-                print_chat_message("Error", str(e), style="red")
-        return
-
-    print_header("voice")
-    if not HAS_VOICE_DEP or not HAS_VOICE_ENGINES:
-        console.print(
-            "\n[bold red]Error: Voice mode dependencies are not installed.[/bold red]\n"
-            "To use voice mode, please install the optional voice packages:\n"
-            "  [green]pip install helium-agent[voice][/green]\n"
-        )
-        return
-
-    set_state("Starting voice engines")
-
-    wake_config = build_wake_config(WAKE_WORD_SETTINGS)
-    speech_config = build_speech_config(SPEECH_SETTINGS, wake_config.microphone_device_index)
-    recognizer = sr.Recognizer()
-
-    print_health_checks()
-
-    set_state("Initializing TTS")
-    pipeline = KPipeline(lang_code="a")
-    target_voice = str(ASSISTANT_SETTINGS.get("tts_voice", "af_heart"))
-
-    set_state("Preparing wake word model")
-    openwakeword.utils.download_models()
-    oww_model = Model(wakeword_models=list(wake_config.models), inference_framework="onnx")
-
-    set_state("Calibrating microphone")
-    try:
-        ambient_rms, ambient_dbfs, recommended_threshold = calibrate_microphone(wake_config)
-        console.print(
-            "[dim]Mic ambient level "
-            f"{ambient_dbfs:.0f} dBFS (rms {ambient_rms:.0f}). "
-            f"Current wake threshold {wake_config.threshold:.2f}; recommended {recommended_threshold:.2f}.[/dim]"
-        )
-    except Exception as exc:
-        console.print(f"[yellow]Microphone calibration skipped: {exc}[/yellow]")
-
-    console.print("[dim]Say Helium or press Enter to talk.[/dim]")
-
-    follow_up_mode = bool(ASSISTANT_SETTINGS.get("follow_up_mode", True))
-    awaiting_follow_up = False
-
+    prompt_session = PromptSession(
+        history=FileHistory(".helium_history"),
+        completer=WorkspaceFileCompleter(skills=discovered_skills),
+        complete_while_typing=True
+    )
+    
     while True:
         try:
-            if awaiting_follow_up:
-                set_state("Listening", "follow-up window")
-            else:
-                set_state("Sleeping", "say Helium or press Enter")
-                diagnostics = wake_word_detection(oww_model, wake_config)
-                play_status_sound("wake")
-                set_state(
-                    "Heard wake word",
-                    f"trigger={diagnostics.trigger}, score={max(list(diagnostics.smoothed_scores.values()) or [0.0]):.2f}",
-                )
-
-            user_text = capture_command(recognizer, speech_config, follow_up=awaiting_follow_up)
-
+            user_text = prompt_session.prompt(HTML("\n<b><green>You</green></b> > ")).strip()
             if not user_text:
-                console.print("[dim]No speech detected. Going back to sleep.[/dim]")
-                play_status_sound("sleep")
-                awaiting_follow_up = False
                 continue
-
-            awaiting_follow_up = False
-            if handle_local_command(user_text, pipeline, target_voice):
-                play_status_sound("sleep")
-                continue
+            if user_text.lower() in {"quit", "exit", "stop"}:
+                print_goodbye()
+                break
 
             reset_state()
-            print_chat_message("You", user_text, style="green")
-            set_state("Thinking")
-
+            if handle_skill_management_command(user_text, workspace, discovered_skills):
+                continue
+            if handle_help_command(user_text, discovered_skills):
+                continue
+            # Check for skill trigger match
+            skill_match = match_skill_trigger(user_text, discovered_skills)
+            if skill_match:
+                skill, skill_args = skill_match
+                invoke_skill(skill, skill_args, confirm_tool, workspace)
+                continue
+            if handle_code_command(user_text, confirm_tool=confirm_tool):
+                continue
+            if handle_deep_research_command(user_text):
+                continue
             metrics: dict[str, Any] = {}
             sources: list[dict[str, str]] = []
 
@@ -981,76 +745,63 @@ def main(mode: str = "text", target_path: str = ".", nuclear: bool = False):
                 if tool_name == "search_web":
                     sources.extend(extract_web_sources(tool_result))
 
-            reply_generator = generate_response(
-                user_text,
-                confirm_tool=confirm_tool,
-                on_state=set_state,
-                on_metrics=metrics.update,
-                on_tool_result=collect_tool_result,
-                print_metrics=False,
-            )
-            full_reply = ""
-            started_speaking = False
+            try:
+                llm_prompt = prepare_rag_prompt(user_text)
+            except RagError as exc:
+                set_state("Attachment error")
+                print_chat_message("Error", exc.message, style="red")
+                continue
 
-            def intercept_generator(gen):
-                nonlocal full_reply, started_speaking
-                for chunk in gen:
-                    if not started_speaking:
-                        set_state("Speaking", "press Enter between chunks to interrupt")
-                        started_speaking = True
-                    full_reply += chunk + " "
-                    yield chunk
+            with console.status("[cyan]Thinking...[/cyan]", spinner="dots") as status:
+                global _active_status
+                _active_status = status
+                def set_state_spinner(state: str):
+                    if "Using" in state or "Attachment" in state:
+                        status.update(f"[yellow]{state}...[/yellow]")
+                    elif "Responding" in state:
+                        status.update("[green]Responding...[/green]")
+                    elif "Thinking" in state:
+                        status.update("[cyan]Thinking...[/cyan]")
+                    else:
+                        status.update(f"[dim]:: {state}[/dim]")
 
-            was_interrupted = text_to_speech(
-                pipeline,
-                intercept_generator(reply_generator),
-                target_voice,
-                interrupt_checker=stdin_pressed,
-            )
-
-            if was_interrupted:
-                console.print("[yellow]Speech interrupted.[/yellow]")
-            if full_reply.strip():
-                print_chat_message("Helium", full_reply.strip(), style="cyan", markdown=True)
+                try:
+                    reply_generator = generate_response(
+                        llm_prompt,
+                        confirm_tool=confirm_tool,
+                        on_state=set_state_spinner,
+                        on_metrics=metrics.update,
+                        on_tool_result=collect_tool_result,
+                        print_metrics=False,
+                        skills=discovered_skills,
+                    )
+                    reply_list = list(reply_generator)
+                finally:
+                    _active_status = None
+            
+            stream_reply(reply_list)
             print_sources(sources)
             if metrics:
                 print_metrics(metrics)
-
-            awaiting_follow_up = follow_up_mode and not was_interrupted
-            if awaiting_follow_up:
-                console.print(
-                    f"[dim]Follow-up mode active for {speech_config.follow_up_timeout_seconds:.0f}s.[/dim]"
-                )
-            else:
-                play_status_sound("sleep")
-                console.print("\n[dim]\\[Sleeping..] Say Helium to wake me up.[/dim]")
-
-        except sr.WaitTimeoutError:
-            console.print("[dim]Timed out waiting for a command. Going back to sleep.[/dim]")
-            awaiting_follow_up = False
-            play_status_sound("sleep")
-        except sr.UnknownValueError:
-            console.print("[dim]Didn't catch that. Going back to sleep.[/dim]")
-            awaiting_follow_up = False
-            play_status_sound("sleep")
+            
         except KeyboardInterrupt:
+            print_goodbye()
+            break
+        except EOFError:
             print_goodbye()
             break
         except Exception as e:
             set_state("Error")
             print_chat_message("Error", str(e), style="red")
-            awaiting_follow_up = False
-            play_status_sound("sleep")
 
 
 def cli_entrypoint():
     parser = argparse.ArgumentParser(description="Helium Agent")
     parser.add_argument("path", type=str, nargs="?", default=".", help="Target workspace path")
-    parser.add_argument("--mode", type=str, choices=["voice", "text"], default="text", help="Interaction mode (voice or text)")
     parser.add_argument("--nuclear", action="store_true", help="Bypass all risky tool confirmations (run without asking permission)")
     args = parser.parse_args()
     
-    main(mode=args.mode, target_path=args.path, nuclear=args.nuclear)
+    main(target_path=args.path, nuclear=args.nuclear)
 
 
 if __name__ == "__main__":

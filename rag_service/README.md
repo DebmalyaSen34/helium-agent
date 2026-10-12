@@ -21,9 +21,7 @@ Scanned PDF fail. Wait for OCR future version.
 ## Storage & Models
 
 * **Database**: SQLite. Store file hash, chunk, text, source location, metadata.
-* **Vector Store**: FAISS. Store dense chunk vectors.
-* **Embeddings**: Local BGE-M3 or BGE-Large. Primary dense + sparse fallback.
-* **Reranker**: Local BGE-reranker-base.
+* **Retrieval**: Lexical (BM25-style) scoring over chunks. No model downloads required.
 
 ## Cache
 

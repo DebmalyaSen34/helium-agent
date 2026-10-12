@@ -7,7 +7,7 @@ from rag_service.doctor import run_doctor
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Jarvis local RAG service")
+    parser = argparse.ArgumentParser(description="Helium local RAG service")
     parser.add_argument("command", nargs="?", default="serve", choices=["serve", "doctor"])
     args = parser.parse_args()
 

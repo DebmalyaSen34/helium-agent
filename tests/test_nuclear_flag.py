@@ -32,7 +32,7 @@ class NuclearFlagTests(unittest.TestCase):
             # Raise EOFError to immediately exit the while True loop
             mock_session.return_value.prompt.side_effect = EOFError()
             
-            main.main(mode="text", target_path=".", nuclear=True)
+            main.main(target_path=".", nuclear=True)
             
             # Assertions
             self.assertFalse(ASSISTANT_SETTINGS["confirm_risky_tools"])

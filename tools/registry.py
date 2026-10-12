@@ -25,8 +25,6 @@ from tools.file_ops import (
     touch_file,
     write_file,
 ) 
-from tools.search.hybrid_fetch import fetch_url_content_mvp
-from tools.search.searxng import search_searxng
 from tools.bash_ops import execute_bash
 from tools.search.browse_url import browse_url
 from tools.web_search import search_web
@@ -236,34 +234,6 @@ The user wants to compile the project. This is not a file manipulation task, so 
 - Cite sources and URLs when they are present.
 - If the evidence says confidence is low or partial, state that clearly instead of guessing.
 </evidence_handling>"""
-
-def execute_react_tool(action_dict: dict) -> str:
-    """Execute a ReAct-style JSON action from the local orchestrator."""
-    if "research_query" in action_dict:
-        query = action_dict["research_query"].get("query", "")
-        max_sources = action_dict["research_query"].get("max_sources", 8)
-        # results = research_query(query, max_sources)
-        return research_query(query, max_sources)
-        # return json.dumps(results)
-    
-    if "search_web" in action_dict:
-        query = action_dict["search_web"].get("query", "")
-        # results = search_searxng(query)
-        # return json.dumps(results)
-        return search_web(query)
-
-    if "fetch_url" in action_dict:
-        url = action_dict["fetch_url"].get("url", "")
-        return fetch_url_content_mvp(url)
-
-    if "browse_url" in action_dict:
-        url = action_dict["browse_url"].get("url", "")
-        return browse_url(url)
-
-    if "finish" in action_dict:
-        return action_dict["finish"].get("answer", "")
-
-    return "Error: Unknown tool."
 
 def execute_tool(
     llm_response: str,

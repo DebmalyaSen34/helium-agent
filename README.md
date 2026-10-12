@@ -174,14 +174,12 @@ This is an **optional** feature. Look into `rag_service` directory for more deta
 
 ## Run The Assistant
 
-> Only TEXT mode is ready for use.
-
 1. Confirm the LLM service is running.
 2. Confirm your web services are running if you want better results.
 3. Start Helium:
 
    ```bash
-   python main.py --mode text
+   python main.py
    ```
 
 4. Wait for:

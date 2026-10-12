@@ -33,11 +33,9 @@ packages = [
     "core",
     "tools",
     "tools.research",
-    "tools.rag",
     "tools.search",
     "config",
     "utils",
-    "engine",
     "rag_service",
     "memory",
     "skills"

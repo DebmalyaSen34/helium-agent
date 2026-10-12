@@ -11,7 +11,7 @@ from rag_service.models import RagError
 from rag_service.service import RagEvidenceService
 
 
-app = FastAPI(title="Jarvis RAG Service", version="0.1.0")
+app = FastAPI(title="Helium RAG Service", version="0.1.0")
 _service: RagEvidenceService | None = None
 
 
@@ -24,12 +24,10 @@ def get_service() -> RagEvidenceService:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    config = load_config()
     return {
         "ok": True,
         "service": "rag_service",
-        "embedding_model": config.embedding_model,
-        "reranker_model": config.reranker_model,
+        "retriever": "lexical",
     }
 
 

@@ -3,9 +3,7 @@ FROM python:3.11-slim
 WORKDIR /workspace
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    HF_HOME=/cache/huggingface \
-    SENTENCE_TRANSFORMERS_HOME=/cache/sentence-transformers
+    PYTHONUNBUFFERED=1
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -15,9 +13,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     zlib1g-dev
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system --index-url https://download.pytorch.org/whl/cpu torch
 
 COPY requirements.txt requirements-rag.txt ./
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -30,4 +25,4 @@ RUN python -m playwright install --with-deps chromium \
 
 COPY . .
 
-CMD ["python", "main.py", "--mode", "text"]
+CMD ["python", "main.py"]

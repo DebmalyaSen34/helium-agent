@@ -1,73 +1,10 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
-import threading
 
 logger = logging.getLogger(__name__)
 
 _manager = None  # PersistentMemoryManager instance, set by initialize_session()
-
-
-# ---------------------------------------------------------------------------
-# Deprecated: SessionMemoryManager — replaced by PersistentMemoryManager
-# ---------------------------------------------------------------------------
-
-class SessionMemoryManager:
-    """DEPRECATED: Use PersistentMemoryManager instead.
-
-    Kept temporarily for reference; will be removed in a future cleanup.
-    """
-
-    _instance = None
-    _lock = threading.Lock()
-
-    def __new__(cls, *args, **kwargs):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self.conn = None
-        self.lock = threading.Lock()
-        self._initialized = True
-
-    def initialize(self):
-        """Initializes a fresh, empty in-memory SQLite database."""
-        with self.lock:
-            if self.conn:
-                try:
-                    self.conn.close()
-                except Exception as e:
-                    logger.debug("Failed closing old connection: %s", e)
-
-            self.conn = sqlite3.connect(":memory:", check_same_thread=False)
-            self._init_db()
-            logger.info("Session memory initialized (in-memory SQLite).")
-
-    def _init_db(self):
-        cursor = self.conn.cursor()
-        cursor.executescript("""
-            CREATE TABLE IF NOT EXISTS session_memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fact TEXT UNIQUE NOT NULL,
-                category TEXT CHECK(category IN ('facts', 'preferences')),
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_memories_fact ON session_memories(fact);
-        """)
-        self.conn.commit()
-
-    def get_connection(self):
-        with self.lock:
-            if self.conn is None:
-                self.conn = sqlite3.connect(":memory:", check_same_thread=False)
-                self._init_db()
-            return self.conn
 
 
 # ---------------------------------------------------------------------------

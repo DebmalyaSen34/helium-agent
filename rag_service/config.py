@@ -43,11 +43,6 @@ class RagServiceConfig:
     max_chunks: int
     max_candidates: int
     max_evidence_chunks: int
-    embedding_model: str
-    fallback_embedding_model: str
-    reranker_model: str
-    device: str
-    batch_size: int
     timeout_seconds: float
     rag_debug: bool
     persist_debug_traces: bool
@@ -88,11 +83,6 @@ class RagServiceConfig:
             max_chunks=int(raw.get("max_chunks", 600)),
             max_candidates=int(raw.get("max_candidates", 24)),
             max_evidence_chunks=int(raw.get("max_evidence_chunks", 8)),
-            embedding_model=str(raw.get("embedding_model", "BAAI/bge-m3")),
-            fallback_embedding_model=str(raw.get("fallback_embedding_model", "BAAI/bge-base-en-v1.5")),
-            reranker_model=str(raw.get("reranker_model", "BAAI/bge-reranker-base")),
-            device=str(raw.get("device", "auto")),
-            batch_size=int(raw.get("batch_size", 8)),
             timeout_seconds=float(raw.get("timeout_seconds", 120.0)),
             rag_debug=bool(raw.get("rag_debug", False)),
             persist_debug_traces=bool(raw.get("persist_debug_traces", False)),

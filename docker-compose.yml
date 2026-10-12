@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.terminal
-    command: ["python", "main.py", "--mode", "text"]
+    command: ["python", "main.py"]
     env_file:
       - .env
     stdin_open: true
@@ -13,7 +13,6 @@ services:
       - .:/workspace
       - /workspace/.venv                        # Prevents host .venv from overlaying container
       - rag-cache:/workspace/.cache/rag_service
-      - model-cache:/cache
     depends_on:
       rag_service:
         condition: service_healthy
@@ -29,7 +28,6 @@ services:
       - .:/workspace
       - /workspace/.venv                        # Prevents host .venv from overlaying container
       - rag-cache:/workspace/.cache/rag_service
-      - model-cache:/cache
     ports:
       - "8765:8765"
     healthcheck:
@@ -41,4 +39,3 @@ services:
 
 volumes:
   rag-cache:
-  model-cache:
