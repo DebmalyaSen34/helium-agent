@@ -568,9 +568,15 @@ def run_agent(
     return result
 
 
-def remember_turn(user_prompt: str, reply: str) -> None:
-    """Append a finished exchange to the short-term conversation history."""
+def remember_turn(user_prompt: str, reply: str, *, persist: bool = True) -> None:
+    """Append a finished exchange to the conversation history (and the workspace memory)."""
     global conversation_history
+
+    if persist:
+        from tools.memory_ops import record_turn
+
+        record_turn("user", user_prompt)
+        record_turn("assistant", reply)
 
     conversation_history.append({"role": "user", "content": user_prompt})
     conversation_history.append({"role": "assistant", "content": reply})

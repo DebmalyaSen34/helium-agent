@@ -43,6 +43,25 @@ def _memories_section(user_prompt: str) -> str | None:
     return f"=== RELEVANT MEMORIES ===\n{memories_text}\n========================"
 
 
+def _project_section() -> str | None:
+    from core.project_context import project_instructions_section
+
+    return project_instructions_section()
+
+
+def _previous_session_section() -> str | None:
+    from tools.memory_ops import get_session_summary
+
+    summary = get_session_summary()
+    if not summary:
+        return None
+    return (
+        "=== PREVIOUS SESSION (most recent turns in this project) ===\n"
+        f"{summary}\n"
+        "========================"
+    )
+
+
 def _skill_body_section(skill: Any) -> str:
     section = f'<skill name="{skill.name}">\n{skill.body}\n</skill>'
     if skill.argument_hint:
@@ -63,10 +82,11 @@ def build_system_prompt(
 ) -> str:
     """Assemble the system prompt for `mode`.
 
-    - chat: persona, tool policy, date, contextual skills, relevant memories
-    - code: persona, tool policy, date, `extra` (the coding workflow rules)
-    - skill: persona, tool policy, date, the skill body
-    - subagent: `persona` (the subagent role), tool policy, date
+    Every mode gets the persona, tool policy, date, and HELIUM.md project instructions.
+    - chat: plus contextual skills, relevant memories, previous-session summary
+    - code: plus `extra` (the coding workflow rules) and the previous-session summary
+    - skill: plus the skill body
+    - subagent: `persona` is the subagent role
     """
     sections: list[str | None] = [
         (persona if persona is not None else ASSISTANT_PERSONA),
@@ -74,11 +94,15 @@ def build_system_prompt(
         _date_line(),
     ]
 
+    sections.append(_project_section())
+
     if mode == "chat":
         sections.append(_skills_section(skills))
         sections.append(_memories_section(user_prompt))
+        sections.append(_previous_session_section())
     elif mode == "code":
         sections.append(extra)
+        sections.append(_previous_session_section())
     elif mode == "skill" and skill is not None:
         sections.append(_skill_body_section(skill))
 

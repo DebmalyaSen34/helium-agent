@@ -456,7 +456,49 @@ def handle_code_command(user_text: str, confirm_tool) -> bool:
     set_state("Coding Workflow")
     with _Rendering(stream_text=False) as live:
         result = run_coding_workflow(task, confirm_tool=confirm_tool, on_event=live.handle_event)
+    report = format_code_workflow_report(result)
+    print_chat_message("Helium", report, style="cyan", markdown=True)
+    _remember_code_turn(f"/code {task}", report)
+    return True
+
+
+def _remember_code_turn(user_text: str, report: str) -> None:
+    try:
+        from core.llm import remember_turn
+
+        remember_turn(user_text, report)
+    except Exception:
+        logger.debug("Could not record /code turn", exc_info=True)
+
+
+def handle_init_command(user_text: str, confirm_tool) -> bool:
+    args = parse_command(user_text, "/init")
+    if args is None:
+        return False
+
+    from core.project_context import INIT_TASK, INIT_UPDATE_TASK, find_project_instructions
+    from tools import file_ops
+
+    existing = find_project_instructions(file_ops.PROJECT_ROOT)
+    task = INIT_TASK
+    if existing is not None:
+        choice = Prompt.ask(
+            f"{existing.name} already exists. Update it, overwrite it, or cancel?",
+            choices=["update", "overwrite", "cancel"],
+            default="update",
+        )
+        if choice == "cancel":
+            print_chat_message("Helium", "Cancelled /init.", style="cyan")
+            return True
+        if choice == "update":
+            task = INIT_UPDATE_TASK
+
+    set_state("Init", "writing HELIUM.md")
+    with _Rendering(stream_text=False) as live:
+        result = run_coding_workflow(task, confirm_tool=confirm_tool, on_event=live.handle_event)
     print_chat_message("Helium", format_code_workflow_report(result), style="cyan", markdown=True)
+    if find_project_instructions(file_ops.PROJECT_ROOT) is not None:
+        console.print("[dim]:: HELIUM.md will be included in every prompt. Use /undo to revert it.[/dim]")
     return True
 
 def handle_deep_research_command(user_text: str) -> bool:
@@ -641,7 +683,7 @@ def handle_undo_command(user_text: str) -> bool:
     if result.skipped:
         message += " Skipped files too large to snapshot: " + ", ".join(display(path) for path in result.skipped) + "."
     print_chat_message("Helium", message, style="cyan", markdown=True)
-    remember_turn(f"[The user ran /undo] {message}", "Noted. I will treat that change as reverted.")
+    remember_turn(f"[The user ran /undo] {message}", "Noted. I will treat that change as reverted.", persist=False)
     return True
 
 
@@ -811,10 +853,22 @@ def main(target_path: str = ".", nuclear: bool = False):
 
     ensure_llm_runtime_config()
 
-    from tools.memory_ops import initialize_session, shutdown_session
-    initialize_session()
+    from tools.memory_ops import get_session_summary, initialize_session, legacy_global_db, shutdown_session
+    initialize_session(workspace=workspace)
     atexit.register(shutdown_session)
-    console.print(f"[dim]:: [Session] Persistent memory initialized for {workspace}.[/dim]")
+    memory_note = "previous session loaded" if get_session_summary() else "new workspace memory"
+    console.print(f"[dim]:: [Session] Persistent memory for {workspace} ({memory_note}).[/dim]")
+    legacy_db = legacy_global_db()
+    if legacy_db is not None:
+        console.print(
+            f"[dim]:: [Session] Found a pre-0.2 shared memory database at {legacy_db}. "
+            "Memory is now stored per workspace; the old file was left untouched.[/dim]"
+        )
+
+    from core.project_context import find_project_instructions
+    instructions = find_project_instructions(workspace)
+    if instructions is not None:
+        console.print(f"[dim]:: [Project] Loaded {instructions.relative_to(workspace)}.[/dim]")
 
     print_header()
 
@@ -832,8 +886,10 @@ def main(target_path: str = ".", nuclear: bool = False):
 
     console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
 
+    from config.paths import workspace_data_dir
+
     prompt_session = PromptSession(
-        history=FileHistory(".helium_history"),
+        history=FileHistory(str(workspace_data_dir(workspace) / "prompt_history")),
         completer=WorkspaceFileCompleter(skills=discovered_skills),
         complete_while_typing=True
     )
@@ -853,6 +909,8 @@ def main(target_path: str = ".", nuclear: bool = False):
             if handle_help_command(user_text, discovered_skills):
                 continue
             if any(handler(user_text) for handler in SESSION_COMMAND_HANDLERS):
+                continue
+            if handle_init_command(user_text, confirm_tool=confirm_tool):
                 continue
             # Check for skill trigger match
             skill_match = match_skill_trigger(user_text, discovered_skills)

@@ -5,7 +5,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from skills.loader import SKILL_FILENAME, Skill, _skill_dirs
+from skills import loader
+from skills.loader import SKILL_FILENAME, Skill
 
 console = Console()
 
@@ -54,7 +55,7 @@ def list_skills(skills: list[Skill]) -> str:
 
 def create_skill(name: str, workspace: Path | None = None) -> Path:
     """Scaffold a new skill in the user skills directory. Returns the path."""
-    skill_dir = _skill_dirs(workspace)[0] / name
+    skill_dir = loader._skill_dirs(workspace)[0] / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_file = skill_dir / SKILL_FILENAME
     skill_file.write_text(SKILL_TEMPLATE.format(name=name), encoding="utf-8")
@@ -63,7 +64,7 @@ def create_skill(name: str, workspace: Path | None = None) -> Path:
 
 def remove_skill(name: str, workspace: Path | None = None) -> tuple[bool, str]:
     """Remove a skill by name from user skills dir. Returns (success, message)."""
-    for skill_dir in _skill_dirs(workspace):
+    for skill_dir in loader._skill_dirs(workspace):
         target = skill_dir / name
         if target.is_dir():
             skill_file = target / SKILL_FILENAME

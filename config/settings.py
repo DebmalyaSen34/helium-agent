@@ -183,6 +183,5 @@ ASSISTANT_SETTINGS = SETTINGS["assistant"]
 LLM_SETTINGS = SETTINGS["llm"]
 AGENT_SETTINGS = SETTINGS["agent"]
 ASSISTANT_PERSONA = str(ASSISTANT_SETTINGS.get("persona", DEFAULT_SETTINGS["assistant"]["persona"])).strip()
-MEMORY_DB = BASE_DIR / "memory.db"
 BROWSER_SETTINGS = SETTINGS.get("browser", DEFAULT_SETTINGS["browser"])
 

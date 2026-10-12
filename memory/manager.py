@@ -9,6 +9,7 @@ from memory.graph import KnowledgeGraph
 from memory.conversation import ConversationStore
 
 logger = logging.getLogger(__name__)
+_warned_keyword_fallback = False
 
 
 class PersistentMemoryManager:
@@ -101,7 +102,7 @@ class PersistentMemoryManager:
         try:
             keywords = self._extract_keywords(text, _raise_on_fallback=True)
         except (AttributeError, RuntimeError, OSError, ImportError) as e:
-            logger.warning(f"Triplet extraction skipped, spaCy unavailable: {e}")
+            logger.debug("Triplet extraction skipped, spaCy unavailable: %s", e)
             return
         if len(keywords) < 2:
             return
@@ -116,7 +117,10 @@ class PersistentMemoryManager:
         except (AttributeError, RuntimeError, OSError, ImportError) as e:
             if _raise_on_fallback:
                 raise
-            logger.warning(f"Keyword extraction failed, using fallback: {e}")
+            global _warned_keyword_fallback
+            if not _warned_keyword_fallback:
+                logger.debug("Keyword extraction unavailable, using simple word split: %s", e)
+                _warned_keyword_fallback = True
             return [w.lower() for w in text.split() if len(w) > 3]
 
     def _load_recent_summary(self):
