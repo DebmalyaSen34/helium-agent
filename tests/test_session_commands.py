@@ -67,7 +67,9 @@ class StreamRenderTests(unittest.TestCase):
     def test_visible_text_hides_reasoning_and_actions(self):
         self.assertEqual(visible_text("<think>hmm"), "")
         self.assertEqual(visible_text("<think>a</think>Answer"), "Answer")
-        self.assertEqual(visible_text('Let me check.<action>{"tool"'), "Let me check.")
+        self.assertEqual(visible_text('<action>{"tool"'), "")
+        # Mid-reply tags are prose, not tool calls (native mode won't execute them either).
+        self.assertEqual(visible_text('Use `<action>{"tool": ...}</action>` blocks.'), 'Use `<action>{"tool": ...}</action>` blocks.')
 
     def test_summarize_args_hides_large_content(self):
         summary = summarize_args({"path": "a.py", "content": "x" * 500})
@@ -136,3 +138,42 @@ class LongStreamRenderingTests(unittest.TestCase):
         # The final full panel shows each line once; the transient tail may repeat
         # only the last screenful, never the whole answer.
         self.assertLessEqual(out.count("Line 0 of a long answer"), 2)
+
+
+class TagsMentionedInProseTests(unittest.TestCase):
+    ANSWER = (
+        "Two protocols: native tool-calling (results returned as role: tool messages) "
+        'and a text `<action>{"tool": ..., "args": ...}</action>` protocol. '
+        "Reasoning in `<think>` blocks is stripped. The end."
+    )
+
+    def test_stream_display_keeps_whole_answer(self):
+        self.assertTrue(visible_text(self.ANSWER).endswith("The end."))
+
+    def test_final_answer_keeps_whole_answer(self):
+        from core.llm import strip_reasoning
+
+        self.assertTrue(strip_reasoning(self.ANSWER).endswith("The end."))
+
+    def test_leading_reasoning_and_bare_actions_are_still_hidden(self):
+        from core.llm import strip_reasoning
+
+        self.assertEqual(visible_text("<think>planning"), "")
+        self.assertEqual(visible_text("<think>plan</think>Answer"), "Answer")
+        self.assertEqual(visible_text('<action>{"tool": "get_time"'), "")
+        self.assertEqual(strip_reasoning("still reasoning</think>Answer"), "Answer")
+        self.assertEqual(strip_reasoning("Literal `</think>` tag."), "Literal `</think>` tag.")
+
+    def test_native_loop_returns_whole_answer(self):
+        from core.llm import AgenticLoop
+        from core.model_client import ModelTurn
+
+        class Model:
+            supports_tools = True
+            cache_key = ("https://x", "m")
+
+            def complete(self, messages, tools=None, on_text=None):
+                return ModelTurn(content=TagsMentionedInProseTests.ANSWER)
+
+        result = AgenticLoop(model=Model(), tool_mode="native").run("sys", "explain")
+        self.assertEqual(result.final_answer, self.ANSWER)

@@ -35,7 +35,7 @@ from tools.registry import (
     render_text_protocol_prompt,
     tool_permission,
 )
-from utils.parser import extract_json
+from utils.parser import extract_json, strip_reasoning
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -442,23 +442,11 @@ BARE_TEXT_ACTION_RE = re.compile(
     re.DOTALL,
 )
 
-THINK_BLOCK_RE = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)
-
-
 def clean_token(token: str) -> str:
     """Strip chat-template control tokens that some local models leak into text."""
     for tag in CHAT_TEMPLATE_TOKENS:
         token = token.replace(tag, "")
     return token
-
-
-def strip_reasoning(text: str) -> str:
-    """Remove <think>...</think> reasoning blocks (including an unterminated one)."""
-    text = THINK_BLOCK_RE.sub("", text)
-    # A reply can also start mid-reasoning with only the closing tag present.
-    if "</think>" in text:
-        text = text.split("</think>", 1)[1]
-    return text.strip()
 
 
 def stream_openrouter_response(payload: dict, *, api_url: str | None = None, api_key: str | None = None):

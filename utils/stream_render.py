@@ -16,8 +16,10 @@ from rich.panel import Panel
 from rich.segment import Segment
 from rich.text import Text
 
-# A real text-protocol tool call, not prose that merely mentions `<action>`.
-ACTION_BLOCK_RE = re.compile(r"<action>\s*\{")
+from utils.parser import strip_reasoning
+
+# A reply that starts with a text-protocol tool call (optionally after a <thought>).
+LEADING_ACTION_RE = re.compile(r"^\s*(?:<thought>.*?</thought>\s*)?<action>", re.DOTALL)
 
 
 def should_stream(console: Console) -> bool:
@@ -27,21 +29,17 @@ def should_stream(console: Console) -> bool:
 
 
 def visible_text(raw: str) -> str:
-    """What to show while streaming: no <think> reasoning, no raw <action> blocks."""
-    text = raw
-    while "<think>" in text:
-        start = text.index("<think>")
-        end = text.find("</think>", start)
-        if end == -1:
-            text = text[:start]
-            break
-        text = text[:start] + text[end + len("</think>"):]
-    if "</think>" in text:
-        text = text.split("</think>", 1)[1]
-    match = ACTION_BLOCK_RE.search(text)
-    if match:
-        text = text[: match.start()]
-    return text.lstrip()
+    """What to show while streaming.
+
+    Hides a leading <think> block (still open or closed) and a reply that is only a
+    text-protocol tool call. Tags mentioned inside an answer are shown as written.
+    """
+    if raw.lstrip().startswith("<think>") and "</think>" not in raw:
+        return ""
+    text = strip_reasoning(raw)
+    if LEADING_ACTION_RE.match(text):
+        return ""
+    return text
 
 
 def summarize_args(args: dict[str, Any], limit: int = 80) -> str:

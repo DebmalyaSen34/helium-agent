@@ -78,3 +78,26 @@ def extract_code_block(text: str) -> str | None:
     pattern = r"```[^\n]*\n(.*?)```"
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else None
+
+
+THINK_OPEN = "<think>"
+THINK_CLOSE = "</think>"
+
+
+def strip_reasoning(text: str) -> str:
+    """Remove a model's leading <think>...</think> block.
+
+    Reasoning models emit thinking at the start of a reply, so only a leading
+    block is removed; `<think>` mentioned later in an answer is ordinary text.
+    An unterminated leading block means the reply is still all reasoning.
+    """
+    stripped = text.lstrip()
+    if stripped.startswith(THINK_OPEN):
+        end = stripped.find(THINK_CLOSE)
+        return "" if end == -1 else stripped[end + len(THINK_CLOSE):].strip()
+
+    # Some chat templates drop the opening tag: "reasoning...</think>answer".
+    end = text.find(THINK_CLOSE)
+    if end != -1 and THINK_OPEN not in text[:end] and text[:end].count("`") % 2 == 0:
+        return text[end + len(THINK_CLOSE):].strip()
+    return text.strip()
