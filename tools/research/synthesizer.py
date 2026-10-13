@@ -1,7 +1,7 @@
 from __future__ import annotations
 from tools.research.models import ResearchEvidence, ResearchPlan, ResearchReport
 from tools.research.source_policy import SourcePolicy
-from tools.search.models import EvidenceItem, FetchedPage
+from tools.search.models import FetchedPage
 
 class ResearchSynthesizer:
     def __init__(self, source_policy: SourcePolicy | None = None) -> None:

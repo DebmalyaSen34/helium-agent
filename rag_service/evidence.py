@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rag_service.config import RagServiceConfig
-from rag_service.models import Chunk, EvidencePack, ExtractedDocument, RetrievedChunk
+from rag_service.models import Chunk, EvidencePack, ExtractedDocument
 from rag_service.retrieval import HybridRetriever
 
 

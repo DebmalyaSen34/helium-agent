@@ -41,8 +41,9 @@ PROVIDERS: dict[str, Provider] = {
 def normalize_chat_url(url: str | None) -> str | None:
     """Turn a provider base URL into its chat-completions endpoint.
 
-    `https://api.deepseek.com` and `.../v1` get `/chat/completions` appended, and
-    Ollama's native `/api/chat` is mapped to its OpenAI-compatible endpoint,
+    `https://api.deepseek.com` and `.../v1` get `/chat/completions` appended, a bare
+    local server URL gets `/v1/chat/completions`, and Ollama's native `/api/chat`
+    is mapped to its OpenAI-compatible endpoint,
     since Helium only speaks the OpenAI chat-completions format.
     """
     if not url:
@@ -56,11 +57,18 @@ def normalize_chat_url(url: str | None) -> str | None:
         return url
     if path == "/api/chat":
         path = "/v1/chat/completions"
+    elif path == "" and _is_local(parts.hostname):
+        # Local servers (Ollama, LM Studio, llama.cpp, vLLM) serve the OpenAI API under /v1.
+        path = "/v1/chat/completions"
     elif path in ("", "/v1", "/beta") or path.endswith("/v1"):
         path = f"{path}/chat/completions"
     else:
         return url
     return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+
+
+def _is_local(hostname: str | None) -> bool:
+    return (hostname or "").lower() in {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"}
 
 
 def provider_for_url(url: str | None) -> Provider | None:

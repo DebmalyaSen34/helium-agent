@@ -40,6 +40,7 @@ from utils.start_animation import render_startup_intro
 from tools.file_ops import set_project_root
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.filters import has_completions
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import FileHistory
 from utils.commands import BUILTIN_COMMANDS, parse_command
@@ -173,16 +174,20 @@ def print_metrics(metrics: dict[str, Any]) -> None:
 
 
 def extract_web_sources(tool_result: str, limit: int = 5) -> list[dict[str, str]]:
+    """Read the `Sources:` section that search_web returns ("- Title: https://...")."""
     sources: list[dict[str, str]] = []
-    pattern = re.compile(
-        r"Result\s+\d+:\s*Title:\s*(?P<title>.*?)\s*URL:\s*(?P<url>.*?)\s*Snippet:",
-        re.DOTALL,
-    )
-    for match in pattern.finditer(tool_result):
-        title = " ".join(match.group("title").split())
-        url = " ".join(match.group("url").split())
-        if title and url and url != "No URL":
-            sources.append({"title": title, "url": url})
+    if "Sources:" not in tool_result:
+        return sources
+    section = tool_result.split("Sources:", 1)[1]
+    for line in section.splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            if sources or line.endswith(":"):
+                break
+            continue
+        match = re.match(r"- (?P<title>.*?):\s+(?P<url>https?://\S+)\s*$", line)
+        if match:
+            sources.append({"title": match.group("title").strip() or match.group("url"), "url": match.group("url")})
         if len(sources) >= limit:
             break
     return sources
@@ -547,8 +552,11 @@ def handle_deep_research_command(user_text: str) -> bool:
         return True
 
     set_state("Deep Research")
-    result = research_query(task, max_sources=8)
+    with _Rendering(stream_text=False) as live:
+        live.update("[#5fd7ff]Planning searches and collecting sources…[/]")
+        result = research_query(task, max_sources=8)
     print_chat_message("Helium", result, style="cyan", markdown=True)
+    _remember_code_turn(f"/deep-research {task}", result)
     return True
 
 def handle_help_command(user_text: str, discovered_skills: list[Skill] | None = None) -> bool:
@@ -898,7 +906,7 @@ def ensure_llm_runtime_config() -> bool:
 def _prompt_key_bindings() -> KeyBindings:
     bindings = KeyBindings()
 
-    @bindings.add("s-tab")
+    @bindings.add("s-tab", filter=~has_completions)
     def _cycle_permission_mode(event) -> None:
         from core.session import SESSION
 
@@ -924,6 +932,8 @@ def main(target_path: str = ".", nuclear: bool = False):
     from tools.memory_ops import get_session_summary, initialize_session, legacy_global_db, shutdown_session
     initialize_session(workspace=workspace)
     atexit.register(shutdown_session)
+    from tools.edit_journal import JOURNAL
+    atexit.register(JOURNAL.clear)
     notes: list[str] = []
     notes.append("Picked up where the last session in this folder left off" if get_session_summary() else "New memory for this folder")
     legacy_db = legacy_global_db()
@@ -972,6 +982,7 @@ def main(target_path: str = ".", nuclear: bool = False):
         key_bindings=_prompt_key_bindings(),
     )
 
+    exit_armed = False
     while True:
         try:
             # The first prompt carries the header so its nucleus can keep wiggling.
@@ -980,7 +991,21 @@ def main(target_path: str = ".", nuclear: bool = False):
                 placeholder=FormattedText([("class:placeholder", random_tip())]),
                 refresh_interval=(1 / NUCLEUS_FPS) if animated_header else None,
             ).strip()
+        except KeyboardInterrupt:
             animated_header = None
+            if exit_armed:
+                print_goodbye()
+                break
+            exit_armed = True
+            console.print(Text("  Press Ctrl+C again to exit, or type exit.", style="dim"))
+            continue
+        except EOFError:
+            print_goodbye()
+            break
+        exit_armed = False
+        animated_header = None
+
+        try:
             console.print()
             if not user_text:
                 continue
@@ -1024,18 +1049,17 @@ def main(target_path: str = ".", nuclear: bool = False):
             rendering = _Rendering()
             with rendering as live:
                 def set_state_spinner(state: str):
-                    if "Using" in state or "Attachment" in state:
-                        live.update(f"[yellow]{state}...[/yellow]")
-                    elif "Responding" in state:
-                        live.update("[green]Responding...[/green]")
-                    elif "Thinking" in state:
-                        live.update("[cyan]Thinking...[/cyan]")
+                    if state.startswith("Using "):
+                        live.update(f"[#e3b341]Running {escape(state[6:])}…[/]")
+                    elif state == "Responding":
+                        live.update("[#3fb950]Responding…[/]")
                     else:
-                        live.update(f"[dim]:: {state}[/dim]")
+                        live.update("[#5fd7ff]Thinking…[/]")
 
                 reply_list = list(
                     generate_response(
                         llm_prompt,
+                        history_prompt=user_text,
                         confirm_tool=confirm_tool,
                         on_state=set_state_spinner,
                         on_metrics=metrics.update,
@@ -1054,8 +1078,8 @@ def main(target_path: str = ".", nuclear: bool = False):
                 print_metrics(metrics)
             
         except KeyboardInterrupt:
-            print_goodbye()
-            break
+            # Ctrl+C during a turn cancels that turn, not the whole session.
+            console.print(Text("\n  ✻ Interrupted. What should Helium do instead?", style="#e3b341"))
         except EOFError:
             print_goodbye()
             break

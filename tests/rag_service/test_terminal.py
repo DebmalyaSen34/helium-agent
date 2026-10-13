@@ -55,3 +55,33 @@ class RagServiceTerminalTests(unittest.TestCase):
                 resolve_single_mention("@a.md and @b.md", config_for(root))
 
             self.assertEqual(caught.exception.code, "too_many_attachments")
+
+
+class MentionPassThroughTests(unittest.TestCase):
+    def test_plain_at_words_are_ordinary_text(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "notes.md").write_text("hello", encoding="utf-8")
+            self.assertIsNone(resolve_single_mention("use the @decorator syntax", config_for(root)))
+            self.assertIsNone(resolve_single_mention("ping @alice and @bob", config_for(root)))
+
+    def test_path_like_mentions_still_report_errors(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(RagError):
+                resolve_single_mention("read @missing.md", config_for(Path(temp)))
+
+    def test_trailing_punctuation_and_other_at_words(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = root / "notes.md"
+            target.write_text("hello", encoding="utf-8")
+            result = resolve_single_mention("what is in @notes.md? also see @decorator", config_for(root))
+            self.assertEqual(result.file_path, target.resolve())
+
+    def test_fuzzy_search_skips_virtualenvs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            hidden = root / ".venv" / "lib" / "decorator.py"
+            hidden.parent.mkdir(parents=True)
+            hidden.write_text("x", encoding="utf-8")
+            self.assertIsNone(resolve_single_mention("explain @decorator", config_for(root)))

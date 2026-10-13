@@ -15,6 +15,7 @@ def _git(args: list[str], timeout: int = 20) -> tuple[int, str]:
             capture_output=True,
             text=True,
             timeout=timeout,
+            stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
         return 127, "git is not installed."

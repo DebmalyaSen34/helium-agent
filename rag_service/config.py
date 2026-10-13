@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from config.settings import BASE_DIR, SETTINGS
+from config.settings import SETTINGS
 
 
 DEFAULT_SUPPORTED_EXTENSIONS = (

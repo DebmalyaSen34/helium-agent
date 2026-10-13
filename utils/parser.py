@@ -13,7 +13,7 @@ def extract_json(text: str) -> dict | None:
         # print(f"This is the data:\n{text}")
         if text.strip().startswith('{'):
             return json.loads(text.strip(), strict=False)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         # Ignore and fallback to regex extraction instead of logging an error
         pass
 
@@ -34,13 +34,13 @@ def extract_json(text: str) -> dict | None:
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
         try:
             return json.loads(text[start_idx:end_idx+1], strict=False)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             pass
 
     if brace_match:
         try:
             return json.loads(brace_match.group(1), strict=False)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             tool_match = re.search(r'"tool"\s*:\s*"([^"]+)"', text)
             filename_match = re.search(r'"filename"\s*:\s*"([^"]+)"', text)
 

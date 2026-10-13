@@ -1,4 +1,3 @@
-import sqlite3
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,11 +93,25 @@ class ConversationStore:
 
         content = "Session context:\n" + "\n".join(lines)
 
-        return memory_store.add(
+        row_id = memory_store.add(
             content=content,
             category='project',
             tags='session-summary'
         )
+        self._prune_session_summaries(memory_store.conn, keep=self.KEEP_SESSION_SUMMARIES)
+        return row_id
+
+    KEEP_SESSION_SUMMARIES = 10
+
+    @staticmethod
+    def _prune_session_summaries(conn, keep):
+        """Only the latest summaries are ever read back; drop the rest."""
+        conn.execute(
+            "DELETE FROM memories WHERE tags = 'session-summary' AND id NOT IN ("
+            "SELECT id FROM memories WHERE tags = 'session-summary' ORDER BY id DESC LIMIT ?)",
+            (keep,),
+        )
+        conn.commit()
 
     def prune(self, days=7):
         """Delete conversation threads older than the given number of days.

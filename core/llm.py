@@ -44,6 +44,9 @@ conversation_history = []
 MAX_HISTORY = 10
 MAX_AGENTIC_TURNS = int(AGENT_SETTINGS.get("chat_max_turns", 12))
 PARALLEL_TOOL_WORKERS = 4
+# Marked safe, but they run whole subagent loops that may ask the user for
+# confirmation, so they must never run concurrently with other calls.
+SEQUENTIAL_TOOLS = frozenset({"create_subagent", "delegate_task", "delete_subagent", "list_subagents"})
 
 ConfirmTool = Callable[[str, dict[str, Any], str], bool]
 EventCallback = Callable[[str, Any], None]
@@ -305,7 +308,12 @@ class AgenticLoop:
         parallel = (
             self.parallel_safe_tools
             and len(calls) > 1
-            and all(not call.parse_error and tool_permission(call.name, call.args) == "safe" for call in calls)
+            and all(
+                not call.parse_error
+                and call.name not in SEQUENTIAL_TOOLS
+                and tool_permission(call.name, call.args) == "safe"
+                for call in calls
+            )
         )
         if not parallel:
             return [run_one(call) for call in calls]
@@ -368,6 +376,10 @@ class AgenticLoop:
 
         action = extract_json(reply)
         if not isinstance(action, dict) or "tool" not in action:
+            if "<action>" not in reply:
+                # A reply that is (or starts with) ordinary JSON, e.g. the user asked
+                # for JSON output, is an answer rather than a malformed tool call.
+                return "none", None
             return "invalid", None
 
         args = action.get("args", {})
@@ -630,7 +642,14 @@ def generate_response(
     skills: list[Any] | None = None,
     on_token: Callable[[str], None] | None = None,
     on_event: EventCallback | None = None,
+    history_prompt: str | None = None,
 ):
+    """Run one chat turn and yield the reply.
+
+    `history_prompt` is what gets remembered for later turns; pass the user's own
+    words when `prompt` was expanded (e.g. with an @file evidence pack) so the
+    expansion isn't resent with every future request.
+    """
     start_time = time.time()
     tool_execution_time = 0.0
     tool_started_at: list[float] = []
@@ -675,7 +694,7 @@ def generate_response(
         if reply:
             yield reply
 
-        remember_turn(prompt, reply, reasoning=loop_result.final_reasoning)
+        remember_turn(history_prompt or prompt, reply, reasoning=loop_result.final_reasoning)
 
         end_time = time.time()
         total_time = end_time - start_time

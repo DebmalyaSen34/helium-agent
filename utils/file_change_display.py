@@ -8,12 +8,10 @@ via pygments, with diff colours layered on top.
 from __future__ import annotations
 
 import difflib
-from pathlib import Path
 
 from pygments import lex
 from pygments.lexers import TextLexer, guess_lexer_for_filename
 from pygments.styles import get_style_by_name
-from pygments.token import Token
 from rich import box
 from rich.console import Console
 from rich.panel import Panel

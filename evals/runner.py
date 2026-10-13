@@ -166,20 +166,20 @@ def main():
     pass_rate = (success_count / len(tasks)) * 100 if tasks else 0.0
     
     with open(report_path, "w") as f:
-        f.write(f"# Helium Agent Evaluation Report\n\n")
+        f.write("# Helium Agent Evaluation Report\n\n")
         f.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"**Overall Pass Rate:** {pass_rate:.1f}% ({success_count}/{len(tasks)})\n\n")
-        f.write(f"## Task Summaries\n\n")
+        f.write("## Task Summaries\n\n")
         for res in results:
             status = "✅ PASS" if res["success"] else "❌ FAIL"
             f.write(f"### {res['id']} ({res['category']}) - {status}\n")
             f.write(f"- **Description:** {res['description']}\n")
             f.write(f"- **Latency:** {res['latency_sec']:.2f}s\n")
-            f.write(f"- **Graders:**\n")
+            f.write("- **Graders:**\n")
             for g in res["graders"]:
                 g_status = "💚" if g["passed"] else "💔"
                 f.write(f"  - {g_status} **{g['type']}**: {g['reason']}\n")
-            f.write(f"\n")
+            f.write("\n")
 
     console.print(f"\n[bold green]Success![/bold green] Markdown report compiled at {report_path}")
 

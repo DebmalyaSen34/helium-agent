@@ -55,6 +55,9 @@ def execute_bash(command: str, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> str:
             text=True,
             timeout=timeout,
             cwd=str(_project_root()),
+            # Never let a command read the user's terminal: `cat`, `grep -r x`, or a
+            # prompt would otherwise block and swallow keystrokes until the timeout.
+            stdin=subprocess.DEVNULL,
         )
 
         output_parts = [f"exit_code: {result.returncode}"]
@@ -132,6 +135,11 @@ def _find_ok(args: list[str]) -> bool:
     return not any(arg in banned for arg in args)
 
 
+def _tail_ok(args: list[str]) -> bool:
+    # `tail -f` never exits on its own.
+    return _no_globs(args) and not any(arg in {"-f", "-F", "--follow"} or arg.startswith("--follow=") for arg in args)
+
+
 def _sort_ok(args: list[str]) -> bool:
     return not any(arg == "-o" or arg.startswith("--output") or (arg.startswith("-o") and not arg.startswith("--")) for arg in args)
 
@@ -177,7 +185,7 @@ SAFE_COMMANDS: dict[str, Callable[[list[str]], bool]] = {
     "df": _no_restrictions,
     "cat": _no_globs,
     "head": _no_globs,
-    "tail": _no_globs,
+    "tail": _tail_ok,
     "wc": _no_globs,
     "file": _no_globs,
     "stat": _no_globs,

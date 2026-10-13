@@ -20,23 +20,50 @@ class ResolvedMention:
     display: str
 
 
+IGNORED_DIRS = frozenset(
+    {".git", ".hg", ".svn", ".venv", "venv", "env", "node_modules", "__pycache__",
+     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".cache", "dist", "build", "site-packages"}
+)
+TRAILING_PUNCTUATION = ".,;:!?)]}'\""
+PATH_LIKE_RE = re.compile(r"[/\\]|\.[A-Za-z0-9]{1,6}$")
+
+
+def looks_like_path(target: str) -> bool:
+    """`@notes.md` or `@src/app` look like files; `@decorator` or `@alice` do not."""
+    return bool(PATH_LIKE_RE.search(target))
+
+
 def resolve_single_mention(text: str, config: RagServiceConfig) -> ResolvedMention | None:
-    matches = list(MENTION_RE.finditer(text))
-    if not matches:
+    """Find the one @file attachment in `text`.
+
+    Mentions that look like paths must resolve, or an error explains why. Plain
+    `@words` (decorators, handles) that match no file are left as ordinary text.
+    """
+    resolved: list[tuple[re.Match, str, Path]] = []
+    for match in MENTION_RE.finditer(text):
+        raw_target = match.group("target").strip().rstrip(TRAILING_PUNCTUATION)
+        if not raw_target:
+            continue
+        path = _resolve_exact(raw_target, config)
+        if path is None:
+            try:
+                path = _resolve_fuzzy(raw_target, config)
+            except RagError:
+                if looks_like_path(raw_target):
+                    raise
+                continue
+        resolved.append((match, raw_target, path))
+
+    if not resolved:
         return None
-    if len(matches) > 1:
+    if len(resolved) > 1:
         raise RagError("too_many_attachments", "Terminal RAG v1 supports exactly one @file attachment per prompt.")
 
-    match = matches[0]
-    raw_target = match.group("target").strip()
+    match, raw_target, path = resolved[0]
     question = f"{text[:match.start()]}{text[match.end():]}".strip()
     question = " ".join(question.split())
     if not question:
         question = "Summarize the attached file."
-
-    path = _resolve_exact(raw_target, config)
-    if path is None:
-        path = _resolve_fuzzy(raw_target, config)
 
     return ResolvedMention(file_path=path, question=question, display=raw_target)
 
@@ -63,6 +90,8 @@ def _resolve_fuzzy(raw_target: str, config: RagServiceConfig) -> Path:
             continue
         for path in root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in config.supported_extensions:
+                continue
+            if any(part in IGNORED_DIRS for part in path.relative_to(root).parts):
                 continue
             name_score = SequenceMatcher(None, query, path.name.lower()).ratio()
             stem_score = SequenceMatcher(None, query, path.stem.lower()).ratio()
