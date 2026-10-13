@@ -258,4 +258,10 @@ uv run pytest tests -q --ignore=tests/test_eval_graders.py --ignore=tests/test_e
 
 The tests never call a real LLM endpoint and keep memory and history in a temporary directory.
 
+Opt-in live checks against the real DeepSeek API (a few small `deepseek-flash` requests, key read from `DEEPSEEK_API_KEY` or `.env`):
+
+```bash
+HELIUM_LIVE_DEEPSEEK=1 uv run pytest tests/live -q
+```
+
 

@@ -237,8 +237,12 @@ class RuntimeConfigStore:
                 sources[field] = "legacy_env"
 
     def _apply_provider_key_env(self, loaded: dict[str, Any], sources: dict[str, str]) -> None:
-        """Fall back to a provider's own key variable, e.g. DEEPSEEK_API_KEY for api.deepseek.com."""
-        if loaded.get("api_key"):
+        """Use a provider's own key variable, e.g. DEEPSEEK_API_KEY for api.deepseek.com.
+
+        It beats a key saved in the config file (which may belong to a previously
+        configured provider) but never an explicit LLM_API_KEY.
+        """
+        if loaded.get("api_key") and sources.get("api_key", "").startswith("env:"):
             return
         from config.providers import provider_for_url
 

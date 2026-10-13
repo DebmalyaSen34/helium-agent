@@ -180,3 +180,30 @@ class NativeProseMentioningActionsTests(unittest.TestCase):
         result, executed = self._run('<action>{"tool": "get_time", "args": {}}</action>')
         self.assertEqual(executed, [{"tool": "get_time", "args": {}}])
         self.assertEqual(result.final_answer, "second")
+
+
+class ProviderKeyPrecedenceTests(unittest.TestCase):
+    def _load(self, env, saved_key):
+        import os
+        import tempfile
+        from pathlib import Path
+        from config.runtime_config import RuntimeConfigStore
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", env, clear=False):
+            for name in ("LLM_API_KEY", "LLM_API_URL", "LLM_MODEL", "DEEPSEEK_API_KEY"):
+                if name not in env:
+                    os.environ.pop(name, None)
+            store = RuntimeConfigStore(config_path=Path(tmp) / "config.toml")
+            store.save(api_key=saved_key, api_url="http://localhost:11434/v1/chat/completions", model="llama3", use_playwright=False)
+            return store.load()
+
+    def test_provider_key_env_beats_a_key_saved_for_another_provider(self):
+        config = self._load({"LLM_API_URL": "https://api.deepseek.com", "DEEPSEEK_API_KEY": "sk-ds"}, saved_key="ollama")
+        self.assertEqual(config.api_key, "sk-ds")
+
+    def test_explicit_llm_api_key_still_wins(self):
+        config = self._load(
+            {"LLM_API_URL": "https://api.deepseek.com", "DEEPSEEK_API_KEY": "sk-ds", "LLM_API_KEY": "sk-explicit"},
+            saved_key="ollama",
+        )
+        self.assertEqual(config.api_key, "sk-explicit")
