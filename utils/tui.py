@@ -25,10 +25,10 @@ DANGER = "#ff6b6b"
 # The logo is a helium-4 nucleus: two protons (P) and two neutrons (N), each a
 # small round blob. Every animation frame jostles the nucleons by a pixel so the
 # nucleus wiggles like it is about to decay.
-NUCLEUS_WIDTH, NUCLEUS_HEIGHT = 10, 10
+NUCLEUS_WIDTH, NUCLEUS_HEIGHT = 8, 8
 # A shaded ball: H is the highlight, X the body.
-NUCLEON_SHAPE = (".HX.", "HXXX", "XXXX", ".XX.")
-NUCLEONS = (("P", 1, 1), ("N", 5, 1), ("N", 1, 5), ("P", 5, 5))
+NUCLEON_SHAPE = ("HX.", "XXX", ".XX")
+NUCLEONS = (("P", 1, 1), ("N", 4, 1), ("N", 1, 4), ("P", 4, 4))
 NUCLEUS_FPS = 8
 # Upper case = body, lower case = highlight.
 _PIXEL_COLORS = {"P": DANGER, "p": "#ffb3b3", "N": "#9aa5b1", "n": "#e6edf3"}
