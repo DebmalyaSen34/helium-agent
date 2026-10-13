@@ -5,18 +5,25 @@ from rich.console import Console
 
 from core.session import SessionState
 from utils.tui import (
-    MASCOT,
+    ATOM,
     make_bottom_toolbar,
-    mascot_lines,
+    logo_lines,
     summarize_tool_counts,
     welcome_header,
 )
 
 
-def test_mascot_uses_two_pixel_rows_per_line():
-    lines = mascot_lines()
-    assert len(lines) == (len(MASCOT) + 1) // 2
-    assert all(len(line.plain) == len(MASCOT[0]) for line in lines)
+def test_atom_logo_uses_two_pixel_rows_per_line():
+    assert len({len(row) for row in ATOM}) == 1, "pixel rows must share one width"
+    lines = logo_lines()
+    assert len(lines) == (len(ATOM) + 1) // 2
+    assert all(len(line.plain) == len(ATOM[0]) for line in lines)
+
+
+def test_atom_has_a_nucleus_and_two_electrons():
+    pixels = "".join(ATOM)
+    assert pixels.count("P") == pixels.count("N") > 0  # protons and neutrons in balance
+    assert pixels.count("E") == 2 * 4  # helium's two electrons, each a 2x2 block
 
 
 def test_welcome_header_shows_model_provider_and_folder():

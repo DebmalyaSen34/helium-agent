@@ -1,4 +1,4 @@
-"""Terminal look and feel: welcome header, mascot, prompt chrome, and status bar."""
+"""Terminal look and feel: welcome header, atom logo, prompt chrome, and status bar."""
 
 from __future__ import annotations
 
@@ -17,26 +17,24 @@ from rich.text import Text
 
 ACCENT = "#5fd7ff"          # helium cyan
 ACCENT_DARK = "#2a9fd6"
-EYE = "#0d1117"
-STRING = "#8b949e"
 AMBER = "#e3b341"
 DANGER = "#ff6b6b"
 
-# Pixel art for the mascot: a small helium balloon with eyes and a string.
-# B = body, H = highlight, E = eye, S = string, . = transparent.
-MASCOT = [
-    "..BBBBB..",
-    ".BBHHBBB.",
-    "BBBBBBBBB",
-    "BBEBBBEBB",
-    "BBBBBBBBB",
-    ".BBBBBBB.",
-    "..BBBBB..",
-    "....B....",
-    "....S....",
-    "...S.....",
+# Pixel art for the logo: a helium atom. A nucleus of protons (P) and neutrons
+# (N) inside one orbital (O) carrying helium's two electrons (E).
+ATOM = [
+    "......OOOOOO..EE..",
+    "...OOO......OOEE..",
+    ".OO............OO.",
+    "OO......PN......OO",
+    "OO.....NPNP.....OO",
+    "OO.....PNPN.....OO",
+    "OO......NP......OO",
+    ".OO............OO.",
+    "..EEOO......OOO...",
+    "..EE..OOOOOO......",
 ]
-_PIXEL_COLORS = {"B": ACCENT, "H": "#c9f1ff", "E": EYE, "S": STRING}
+_PIXEL_COLORS = {"O": "#3b6e8f", "P": DANGER, "N": "#c9d1d9", "E": ACCENT}
 
 TIPS = (
     'Try "explain how this project is structured"',
@@ -55,9 +53,10 @@ PERMISSION_LABELS = {
 }
 
 
-def mascot_lines() -> list[Text]:
-    """Render MASCOT with half-block characters: two pixel rows per text line."""
-    rows = list(MASCOT)
+def logo_lines() -> list[Text]:
+    """Render ATOM with half-block characters: two pixel rows per text line."""
+    width = max(len(row) for row in ATOM)
+    rows = [row.ljust(width, ".") for row in ATOM]
     if len(rows) % 2:
         rows.append("." * len(rows[0]))
     lines: list[Text] = []
@@ -109,13 +108,13 @@ def endpoint_label(api_url: str | None) -> str:
 
 
 def welcome_header(*, workspace: Path, model: str, api_url: str | None, notes: list[str] | None = None) -> RenderableType:
-    """Mascot on the left; name, model, and folder on the right; notes underneath."""
+    """Atom logo on the left; name, model, and folder on the right; notes underneath."""
     info = [
         Text.assemble(("Helium Agent", "bold"), (f" v{app_version()}", "dim")),
         Text.assemble((model or "no model set", ""), (" · ", "dim"), (endpoint_label(api_url), "dim")),
         Text(short_path(workspace), style="dim"),
     ]
-    art = mascot_lines()
+    art = logo_lines()
     grid = Table.grid(padding=(0, 3))
     grid.add_column(no_wrap=True)
     grid.add_column()
@@ -234,7 +233,7 @@ __all__ = [
     "PROMPT_STYLE",
     "assistant_block",
     "make_bottom_toolbar",
-    "mascot_lines",
+    "logo_lines",
     "prompt_message",
     "random_tip",
     "summarize_tool_counts",
