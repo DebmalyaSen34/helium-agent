@@ -185,7 +185,13 @@ class AgenticLoop:
                     messages.append({"role": "tool", "tool_call_id": call.call_id, "content": result})
                 continue
 
-            action_status, action = self._extract_action(content)
+            if native and not BARE_TEXT_ACTION_RE.match(content):
+                # In native mode a text action is only a fallback for models that ignore
+                # `tools`, so it must be the whole reply. Prose that mentions or quotes
+                # `<action>` blocks is a final answer, not a tool call.
+                action_status, action = "none", None
+            else:
+                action_status, action = self._extract_action(content)
 
             if action_status == "none":
                 return self._result(content, "final", tools_used, observations, usage, messages, turn.reasoning_content)
@@ -356,7 +362,7 @@ class AgenticLoop:
         )
 
     def _extract_action(self, reply: str) -> tuple[str, dict[str, Any] | None]:
-        looks_like_action = "<action" in reply or reply.strip().startswith("{")
+        looks_like_action = "<action>" in reply or reply.strip().startswith("{")
         if not looks_like_action:
             return "none", None
 
@@ -428,6 +434,12 @@ CHAT_TEMPLATE_TOKENS = (
     "<start_of_turn>",
     "</start_of_turn>",
     "</end_of_turn>",
+)
+
+# A reply that consists only of an (optional) <thought> and one <action> block.
+BARE_TEXT_ACTION_RE = re.compile(
+    r"^\s*(?:<thought>.*?</thought>\s*)?<action>\s*\{.*\}\s*</action>\s*$",
+    re.DOTALL,
 )
 
 THINK_BLOCK_RE = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)

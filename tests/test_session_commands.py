@@ -115,3 +115,24 @@ class InitCommandTests(unittest.TestCase):
             finally:
                 file_ops.set_project_root(original)
         mock_run.assert_not_called()
+
+
+class LongStreamRenderingTests(unittest.TestCase):
+    def test_long_streamed_answer_is_printed_once_in_full(self):
+        import io
+        import re
+        from rich.console import Console
+        from utils.stream_render import LiveReply
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=True, width=60, height=15, color_system=None)
+        reply = LiveReply(console, stream_text=True)
+        reply.start()
+        for i in range(80):
+            reply.on_text(f"Line {i} of a long answer that mentions `<action>` in prose.\n\n")
+        self.assertTrue(reply.finish())
+        out = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue())
+        self.assertIn("Line 79 of a long answer", out)
+        # The final full panel shows each line once; the transient tail may repeat
+        # only the last screenful, never the whole answer.
+        self.assertLessEqual(out.count("Line 0 of a long answer"), 2)

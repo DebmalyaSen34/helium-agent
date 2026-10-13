@@ -142,3 +142,41 @@ class ExtraParamsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NativeProseMentioningActionsTests(unittest.TestCase):
+    def _run(self, content):
+        class Model:
+            supports_tools = True
+            cache_key = ("https://x", "m")
+
+            def __init__(self):
+                self.turns = [ModelTurn(content=content), ModelTurn(content="second")]
+
+            def complete(self, messages, tools=None, on_text=None):
+                return self.turns.pop(0)
+
+        executed = []
+        result = AgenticLoop(
+            model=Model(),
+            execute_tool_call=lambda a, confirm_tool=None: executed.append(a) or "ran",
+            tool_mode="native",
+        ).run("sys", "explain")
+        return result, executed
+
+    def test_prose_mentioning_action_tag_is_final_answer(self):
+        text = "Text mode falls back to a `<action>` protocol when tools are unsupported."
+        result, executed = self._run(text)
+        self.assertEqual(result.final_answer, text)
+        self.assertEqual(executed, [])
+
+    def test_quoted_example_action_is_not_executed(self):
+        text = 'Example:\n```\n<action>{"tool": "delete_file", "args": {"path": "x"}}</action>\n```\nThat is the format.'
+        result, executed = self._run(text)
+        self.assertEqual(executed, [])
+        self.assertIn("That is the format.", result.final_answer)
+
+    def test_bare_text_action_still_runs_in_native_mode(self):
+        result, executed = self._run('<action>{"tool": "get_time", "args": {}}</action>')
+        self.assertEqual(executed, [{"tool": "get_time", "args": {}}])
+        self.assertEqual(result.final_answer, "second")

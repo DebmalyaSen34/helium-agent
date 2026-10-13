@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from functools import wraps
 from typing import Any
@@ -12,7 +13,11 @@ from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.segment import Segment
 from rich.text import Text
+
+# A real text-protocol tool call, not prose that merely mentions `<action>`.
+ACTION_BLOCK_RE = re.compile(r"<action>\s*\{")
 
 
 def should_stream(console: Console) -> bool:
@@ -33,8 +38,9 @@ def visible_text(raw: str) -> str:
         text = text[:start] + text[end + len("</think>"):]
     if "</think>" in text:
         text = text.split("</think>", 1)[1]
-    if "<action" in text:
-        text = text[: text.index("<action")]
+    match = ACTION_BLOCK_RE.search(text)
+    if match:
+        text = text[: match.start()]
     return text.lstrip()
 
 
@@ -47,6 +53,28 @@ def summarize_args(args: dict[str, Any], limit: int = 80) -> str:
         parts.append(f"{key}={text}")
     summary = " ".join(parts)
     return summary if len(summary) <= limit else summary[: limit - 1] + "…"
+
+
+class _TailView:
+    """Live renderable that only shows the last screenful of the streamed panel.
+
+    Rich can't redraw a live region taller than the terminal (it would scroll and
+    duplicate output), so while streaming we keep the region within the screen and
+    print the complete answer once streaming ends.
+    """
+
+    def __init__(self, reply: "LiveReply") -> None:
+        self.reply = reply
+
+    def __rich_console__(self, console, options):
+        renderable = Group(Text(self.reply.label, style="bold cyan"), self.reply._panel(self.reply._shown))
+        lines = console.render_lines(renderable, options, pad=False)
+        max_lines = max(4, (options.height or console.height) - 2)
+        if len(lines) > max_lines:
+            lines = lines[-max_lines:]
+        for line in lines:
+            yield from line
+            yield Segment.line()
 
 
 def _locked(method):
@@ -74,6 +102,7 @@ class LiveReply:
         self._status_message = "[cyan]Thinking...[/cyan]"
         self._live: Live | None = None
         self._raw = ""
+        self._shown = ""
         self._final_streamed = False
         # Parallel tool calls report progress from worker threads.
         self._lock = threading.RLock()
@@ -129,21 +158,19 @@ class LiveReply:
         shown = visible_text(self._raw)
         if not shown.strip():
             return
+        self._shown = shown
         if self._live is None:
             if self._status is not None:
                 self._status.stop()
                 self._status = None
-            self.console.print(Text(self.label, style="bold cyan"))
             self._live = Live(
-                self._panel(shown),
+                _TailView(self),
                 console=self.console,
                 refresh_per_second=8,
-                vertical_overflow="visible",
-                transient=False,
+                vertical_overflow="crop",
+                transient=True,
             )
             self._live.start()
-        else:
-            self._live.update(self._panel(shown))
         self._final_streamed = True
 
     @_locked
@@ -161,9 +188,7 @@ class LiveReply:
     @_locked
     def finish(self) -> bool:
         """Stop live output. Returns True when the final answer was already shown."""
-        if self._live is not None:
-            self._live.stop()
-            self._live = None
+        self._flush_live()
         if self._status is not None:
             self._status.stop()
             self._status = None
@@ -171,12 +196,21 @@ class LiveReply:
 
     # -- helpers -----------------------------------------------------------------
 
+    def _flush_live(self) -> None:
+        """Replace the transient live tail with the complete text, printed once."""
+        if self._live is None:
+            return
+        self._live.stop()
+        self._live = None
+        if self._shown.strip():
+            self.console.print(Text(self.label, style="bold cyan"))
+            self.console.print(self._panel(self._shown))
+
     def _commit_text(self) -> None:
         """Freeze streamed narration in place; later text starts a new panel."""
-        if self._live is not None:
-            self._live.stop()
-            self._live = None
+        self._flush_live()
         self._raw = ""
+        self._shown = ""
         self._final_streamed = False
 
     @staticmethod
