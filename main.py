@@ -38,11 +38,22 @@ from rag_service.models import RagError
 from rag_service.terminal import resolve_single_mention
 from utils.start_animation import render_startup_intro
 from tools.file_ops import set_project_root
-from prompt_toolkit import PromptSession, HTML
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import FileHistory
 from utils.commands import BUILTIN_COMMANDS, parse_command
 from utils.completer import WorkspaceFileCompleter
 from utils.stream_render import LiveReply
+from utils.tui import (
+    PROMPT_STYLE,
+    assistant_block,
+    make_bottom_toolbar,
+    prompt_message,
+    random_tip,
+    summarize_tool_counts,
+    welcome_header,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,12 +90,20 @@ def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
     )
 
 
-def print_header() -> None:
-    console.print()
-    render_startup_intro()
-    console.rule(
-        "[bold cyan]HELIUM AGENT[/bold cyan] [dim]local assistant[/dim]",
-        style="bright_black",
+def print_header(workspace: Path | None = None, notes: list[str] | None = None) -> None:
+    if ASSISTANT_SETTINGS.get("startup_animation", False):
+        render_startup_intro()
+
+    from core.session import get_active_model
+
+    runtime_config = load_llm_runtime_config()
+    console.print(
+        welcome_header(
+            workspace=workspace or Path.cwd(),
+            model=get_active_model(),
+            api_url=runtime_config.api_url,
+            notes=notes,
+        )
     )
 
 
@@ -94,7 +113,11 @@ def reset_state() -> None:
 
 
 def print_goodbye() -> None:
-    console.print(app_panel(Text("Goodbye.", style="bold yellow"), title="Session", border_style="yellow"))
+    from core.session import SESSION
+
+    usage = SESSION.usage
+    summary = f"  {usage.total_tokens:,} tokens · {usage.tool_calls} tool calls this session" if usage.requests else ""
+    console.print(Text.assemble(("\n● ", "#5fd7ff"), ("Goodbye.", "bold"), (summary, "dim")))
 
 
 def set_state(state: str, detail: str | None = None) -> None:
@@ -104,7 +127,7 @@ def set_state(state: str, detail: str | None = None) -> None:
         return
     _last_state_key = key
 
-    message = f"[dim]::[/dim] [cyan]{escape(state)}[/cyan]"
+    message = f"[#e3b341]✻[/] [bold]{escape(state)}[/bold]"
     if detail:
         message += f" [dim]{escape(detail)}[/dim]"
     console.print(message)
@@ -119,25 +142,24 @@ def print_chat_message(speaker: str, message: str, *, style: str, markdown: bool
         console.print(text)
         return
 
-    content = Markdown(message) if markdown else Text(message)
-    label = Text(speaker, style=f"bold {style}")
-    panel = Panel(content, border_style="bright_black", box=box.ROUNDED, padding=(0, 1))
-    console.print(Group(label, panel))
+    bullet_style = {"red": "#ff6b6b", "green": "#3fb950"}.get(style, "#5fd7ff")
+    body = Markdown(message) if markdown else Text(message)
+    if speaker != "Helium":
+        body = Group(Text(speaker, style=f"bold {bullet_style}"), body)
+    console.print(assistant_block(body, bullet_style=bullet_style))
+    console.print()
 
 
 def print_metrics(metrics: dict[str, Any]) -> None:
-    tools = str(metrics["tools_used"])
-    text = Text("   ", style="dim")
-    text.append(f"{metrics['total_time']:.2f}s", style="cyan")
-    text.append(" total  |  ", style="dim")
-    text.append(f"{metrics['tokens']}", style="cyan")
-    text.append(" tokens  |  ", style="dim")
-    text.append(f"{metrics['tps']:.1f}", style="cyan")
-    text.append(" tps", style="dim")
-    if tools != "None":
-        text.append("  |  tool ", style="dim")
-        text.append(tools, style="cyan")
-    console.print(text)
+    tools = summarize_tool_counts(str(metrics["tools_used"]))
+    parts = [
+        f"{metrics['total_time']:.1f}s",
+        f"{int(metrics['tokens']):,} tokens",
+        f"{metrics['tps']:.0f} tok/s",
+    ]
+    if tools:
+        parts.append(tools)
+    console.print(Text("  ✻ " + " · ".join(parts), style="dim"))
 
 
 def extract_web_sources(tool_result: str, limit: int = 5) -> list[dict[str, str]]:
@@ -287,6 +309,11 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     approval_key = _approval_key(tool_name, args)
     if approval_key in SESSION.allow_list:
         return True
+    if SESSION.permission_mode == "accept-edits":
+        from core.coding_workflow import CODING_AUTO_APPROVED_TOOLS
+
+        if tool_name in CODING_AUTO_APPROVED_TOOLS:
+            return True
 
     global _active_status
     if _active_status is not None:
@@ -858,6 +885,20 @@ def ensure_llm_runtime_config() -> bool:
         return False
 
 
+def _prompt_key_bindings() -> KeyBindings:
+    bindings = KeyBindings()
+
+    @bindings.add("s-tab")
+    def _cycle_permission_mode(event) -> None:
+        from core.session import SESSION
+
+        if ASSISTANT_SETTINGS.get("confirm_risky_tools", True):
+            SESSION.cycle_permission_mode()
+        event.app.invalidate()
+
+    return bindings
+
+
 def main(target_path: str = ".", nuclear: bool = False):
     workspace = Path(target_path).resolve()
     os.chdir(workspace)
@@ -873,21 +914,18 @@ def main(target_path: str = ".", nuclear: bool = False):
     from tools.memory_ops import get_session_summary, initialize_session, legacy_global_db, shutdown_session
     initialize_session(workspace=workspace)
     atexit.register(shutdown_session)
-    memory_note = "previous session loaded" if get_session_summary() else "new workspace memory"
-    console.print(f"[dim]:: [Session] Persistent memory for {workspace} ({memory_note}).[/dim]")
+    notes: list[str] = []
+    notes.append("Picked up where the last session in this folder left off" if get_session_summary() else "New memory for this folder")
     legacy_db = legacy_global_db()
     if legacy_db is not None:
-        console.print(
-            f"[dim]:: [Session] Found a pre-0.2 shared memory database at {legacy_db}. "
-            "Memory is now stored per workspace; the old file was left untouched.[/dim]"
-        )
+        notes.append(f"Old shared memory at {legacy_db} is no longer used (left untouched)")
 
     from core.project_context import find_project_instructions
     instructions = find_project_instructions(workspace)
     if instructions is not None:
-        console.print(f"[dim]:: [Project] Loaded {instructions.relative_to(workspace)}.[/dim]")
-
-    print_header()
+        notes.append(f"Following {instructions.relative_to(workspace)}")
+    else:
+        notes.append("Run /init to create a HELIUM.md with instructions for this project")
 
     # Discover skills from user and project directories
     discovered_skills = discover_skills(workspace)
@@ -899,21 +937,34 @@ def main(target_path: str = ".", nuclear: bool = False):
             parts.append(f"{slash_count} slash command{'s' if slash_count != 1 else ''}")
         if ctx_count:
             parts.append(f"{ctx_count} contextual skill{'s' if ctx_count != 1 else ''}")
-        console.print(f"[dim]:: [Skills] Loaded {' + '.join(parts)}.[/dim]")
+        notes.append(f"Skills: {' + '.join(parts)}")
 
-    console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
+    print_header(workspace, notes)
 
     from config.paths import workspace_data_dir
+    from core.session import SESSION, get_active_model
+
+    def status() -> dict[str, str]:
+        mode = "nuclear" if not ASSISTANT_SETTINGS.get("confirm_risky_tools", True) else SESSION.permission_mode
+        tokens = f"{SESSION.usage.total_tokens:,}" if SESSION.usage.requests else ""
+        return {"mode": mode, "model": get_active_model(), "tokens": tokens}
 
     prompt_session = PromptSession(
         history=FileHistory(str(workspace_data_dir(workspace) / "prompt_history")),
         completer=WorkspaceFileCompleter(skills=discovered_skills),
-        complete_while_typing=True
+        complete_while_typing=True,
+        bottom_toolbar=make_bottom_toolbar(status),
+        style=PROMPT_STYLE,
+        key_bindings=_prompt_key_bindings(),
     )
-    
+
     while True:
         try:
-            user_text = prompt_session.prompt(HTML("\n<b><green>You</green></b> > ")).strip()
+            user_text = prompt_session.prompt(
+                prompt_message,
+                placeholder=FormattedText([("class:placeholder", random_tip())]),
+            ).strip()
+            console.print()
             if not user_text:
                 continue
             if user_text.lower() in {"quit", "exit", "stop"}:

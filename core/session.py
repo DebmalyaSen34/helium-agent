@@ -31,11 +31,21 @@ class SessionState:
     usage: UsageTotals = field(default_factory=UsageTotals)
     # Tool approvals granted with "always allow" for the rest of the session.
     allow_list: set[str] = field(default_factory=set)
+    # "ask": confirm every risky tool. "accept-edits": auto-approve file edits,
+    # still confirm shell commands, deletes, and moves. Cycled with shift+tab.
+    permission_mode: str = "ask"
 
     def reset(self) -> None:
         self.model_override = None
         self.usage = UsageTotals()
         self.allow_list.clear()
+        self.permission_mode = "ask"
+
+    def cycle_permission_mode(self) -> str:
+        modes = ("ask", "accept-edits")
+        current = modes.index(self.permission_mode) if self.permission_mode in modes else 0
+        self.permission_mode = modes[(current + 1) % len(modes)]
+        return self.permission_mode
 
 
 SESSION = SessionState()

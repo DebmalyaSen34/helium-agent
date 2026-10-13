@@ -8,13 +8,9 @@ import threading
 from functools import wraps
 from typing import Any
 
-from rich import box
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
-from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.segment import Segment
-from rich.text import Text
 
 from utils.parser import strip_reasoning
 
@@ -65,7 +61,7 @@ class _TailView:
         self.reply = reply
 
     def __rich_console__(self, console, options):
-        renderable = Group(Text(self.reply.label, style="bold cyan"), self.reply._panel(self.reply._shown))
+        renderable = self.reply._panel(self.reply._shown)
         lines = console.render_lines(renderable, options, pad=False)
         max_lines = max(4, (options.height or console.height) - 2)
         if len(lines) > max_lines:
@@ -97,7 +93,7 @@ class LiveReply:
         self.label = label
         self.stream_text = should_stream(console) if stream_text is None else stream_text
         self._status = None
-        self._status_message = "[cyan]Thinking...[/cyan]"
+        self._status_message = "[#5fd7ff]Thinking…[/]"
         self._live: Live | None = None
         self._raw = ""
         self._shown = ""
@@ -120,7 +116,7 @@ class LiveReply:
     def start(self) -> None:
         """Resume the spinner (used after a confirmation prompt)."""
         if self._status is None and self._live is None:
-            self._status = self.console.status(self._status_message, spinner="dots")
+            self._status = self.console.status(self._status_message, spinner="dots", spinner_style="#5fd7ff")
             self._status.start()
 
     @_locked
@@ -146,7 +142,7 @@ class LiveReply:
         elif kind == "tool_start":
             self.on_tool_start(payload.get("name", "tool"), payload.get("args") or {})
         elif kind == "tool_end":
-            self.update("[cyan]Thinking...[/cyan]")
+            self.update("[#5fd7ff]Thinking…[/]")
 
     @_locked
     def on_text(self, delta: str) -> None:
@@ -174,13 +170,10 @@ class LiveReply:
     @_locked
     def on_tool_start(self, name: str, args: dict[str, Any]) -> None:
         self.stop()
-        line = Text("   → ", style="dim")
-        line.append(name, style="cyan")
-        summary = summarize_args(args)
-        if summary:
-            line.append(f" {summary}", style="dim")
-        self.console.print(line)
-        self._status_message = f"[yellow]Using {name}...[/yellow]"
+        from utils.tui import tool_line
+
+        self.console.print(tool_line(name, summarize_args(args)))
+        self._status_message = f"[#e3b341]Running {name}…[/]"
         self.start()
 
     @_locked
@@ -201,8 +194,8 @@ class LiveReply:
         self._live.stop()
         self._live = None
         if self._shown.strip():
-            self.console.print(Text(self.label, style="bold cyan"))
             self.console.print(self._panel(self._shown))
+            self.console.print()
 
     def _commit_text(self) -> None:
         """Freeze streamed narration in place; later text starts a new panel."""
@@ -212,8 +205,10 @@ class LiveReply:
         self._final_streamed = False
 
     @staticmethod
-    def _panel(text: str) -> Panel:
-        return Panel(Group(Markdown(text)), border_style="bright_black", box=box.ROUNDED, padding=(0, 1))
+    def _panel(text: str):
+        from utils.tui import assistant_block
+
+        return assistant_block(text)
 
 
 __all__ = ["LiveReply", "should_stream", "summarize_args", "visible_text"]

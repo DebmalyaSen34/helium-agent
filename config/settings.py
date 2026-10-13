@@ -88,6 +88,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "assistant": {
         "confirm_risky_tools": True,
+        "startup_animation": False,
         "persona": """
 You are Helium, a local AI agent that runs in the user's terminal and works inside their project.
 

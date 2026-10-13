@@ -23,6 +23,7 @@ supported_extensions = [".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".js
 
 [assistant]
 confirm_risky_tools = true
+startup_animation = false   # true plays the fusion intro and boot checks before the header
 # persona = """..."""  # uncomment to override the built-in persona
 
 [llm]
