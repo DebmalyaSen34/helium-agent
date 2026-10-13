@@ -5,7 +5,10 @@ from rich.console import Console
 
 from core.session import SessionState
 from utils.tui import (
-    ATOM,
+    NUCLEON_SHAPE,
+    NUCLEUS_HEIGHT,
+    NUCLEUS_WIDTH,
+    nucleus_pixels,
     make_bottom_toolbar,
     logo_lines,
     summarize_tool_counts,
@@ -13,17 +16,39 @@ from utils.tui import (
 )
 
 
-def test_atom_logo_uses_two_pixel_rows_per_line():
-    assert len({len(row) for row in ATOM}) == 1, "pixel rows must share one width"
+def test_nucleus_has_two_protons_and_two_neutrons():
+    rest = "".join(nucleus_pixels(0))
+    blob = sum(len(row) - row.count(".") for row in NUCLEON_SHAPE)
+    assert rest.count("P") + rest.count("p") == 2 * blob
+    assert rest.count("N") + rest.count("n") == 2 * blob
+
+
+def test_nucleus_wiggles_between_frames_and_stays_in_bounds():
+    frames = {tuple(nucleus_pixels(frame)) for frame in range(1, 30)}
+    assert len(frames) > 5
+    for frame in range(1, 200):
+        rows = nucleus_pixels(frame)
+        assert len(rows) == NUCLEUS_HEIGHT
+        assert all(len(row) == NUCLEUS_WIDTH for row in rows)
+
+
+def test_logo_lines_fold_two_pixel_rows_per_line():
     lines = logo_lines()
-    assert len(lines) == (len(ATOM) + 1) // 2
-    assert all(len(line.plain) == len(ATOM[0]) for line in lines)
+    assert len(lines) == NUCLEUS_HEIGHT // 2
+    assert all(len(line.plain) == NUCLEUS_WIDTH for line in lines)
 
 
-def test_atom_has_a_nucleus_and_two_electrons():
-    pixels = "".join(ATOM)
-    assert pixels.count("P") == pixels.count("N") > 0  # protons and neutrons in balance
-    assert pixels.count("E") == 2 * 4  # helium's two electrons, each a 2x2 block
+def test_prompt_header_animates_until_accepted():
+    from unittest.mock import patch
+    from prompt_toolkit.formatted_text import fragment_list_to_text
+    from utils.tui import HeaderInfo, make_prompt_message
+
+    message = make_prompt_message(HeaderInfo(Path("/tmp/p"), "deepseek-flash", "https://api.deepseek.com"))
+    app = type("App", (), {"is_done": False, "output": None})()
+    with patch("prompt_toolkit.application.get_app", return_value=app), patch("utils.tui._columns", return_value=40):
+        text = fragment_list_to_text(message())
+    assert "Helium Agent" in text and "deepseek-flash" in text and "❯" in text
+    assert make_prompt_message(None)().__class__.__name__ == "FormattedText"
 
 
 def test_welcome_header_shows_model_provider_and_folder():

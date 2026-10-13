@@ -46,10 +46,12 @@ from utils.commands import BUILTIN_COMMANDS, parse_command
 from utils.completer import WorkspaceFileCompleter
 from utils.stream_render import LiveReply
 from utils.tui import (
+    NUCLEUS_FPS,
     PROMPT_STYLE,
+    HeaderInfo,
     assistant_block,
     make_bottom_toolbar,
-    prompt_message,
+    make_prompt_message,
     random_tip,
     summarize_tool_counts,
     welcome_header,
@@ -90,21 +92,29 @@ def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
     )
 
 
-def print_header(workspace: Path | None = None, notes: list[str] | None = None) -> None:
-    if ASSISTANT_SETTINGS.get("startup_animation", False):
-        render_startup_intro()
-
+def header_info(workspace: Path | None = None, notes: list[str] | None = None) -> HeaderInfo:
     from core.session import get_active_model
 
     runtime_config = load_llm_runtime_config()
-    console.print(
-        welcome_header(
-            workspace=workspace or Path.cwd(),
-            model=get_active_model(),
-            api_url=runtime_config.api_url,
-            notes=notes,
-        )
+    return HeaderInfo(
+        workspace=workspace or Path.cwd(),
+        model=get_active_model(),
+        api_url=runtime_config.api_url,
+        notes=tuple(notes or ()),
     )
+
+
+def animated_header_supported() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def print_header(workspace: Path | None = None, notes: list[str] | None = None) -> None:
+    """Static header. Interactive sessions show an animated one in the first prompt instead."""
+    if ASSISTANT_SETTINGS.get("startup_animation", False):
+        render_startup_intro()
+
+    info = header_info(workspace, notes)
+    console.print(welcome_header(workspace=info.workspace, model=info.model, api_url=info.api_url, notes=list(info.notes)))
 
 
 def reset_state() -> None:
@@ -939,7 +949,11 @@ def main(target_path: str = ".", nuclear: bool = False):
             parts.append(f"{ctx_count} contextual skill{'s' if ctx_count != 1 else ''}")
         notes.append(f"Skills: {' + '.join(parts)}")
 
-    print_header(workspace, notes)
+    animated_header = header_info(workspace, notes) if animated_header_supported() else None
+    if animated_header is None:
+        print_header(workspace, notes)
+    elif ASSISTANT_SETTINGS.get("startup_animation", False):
+        render_startup_intro()
 
     from config.paths import workspace_data_dir
     from core.session import SESSION, get_active_model
@@ -960,10 +974,13 @@ def main(target_path: str = ".", nuclear: bool = False):
 
     while True:
         try:
+            # The first prompt carries the header so its nucleus can keep wiggling.
             user_text = prompt_session.prompt(
-                prompt_message,
+                make_prompt_message(animated_header),
                 placeholder=FormattedText([("class:placeholder", random_tip())]),
+                refresh_interval=(1 / NUCLEUS_FPS) if animated_header else None,
             ).strip()
+            animated_header = None
             console.print()
             if not user_text:
                 continue

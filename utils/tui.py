@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import random
 import shutil
+import time
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from prompt_toolkit.formatted_text import FormattedText
@@ -20,21 +22,17 @@ ACCENT_DARK = "#2a9fd6"
 AMBER = "#e3b341"
 DANGER = "#ff6b6b"
 
-# Pixel art for the logo: a helium atom. A nucleus of protons (P) and neutrons
-# (N) inside one orbital (O) carrying helium's two electrons (E).
-ATOM = [
-    "......OOOOOO..EE..",
-    "...OOO......OOEE..",
-    ".OO............OO.",
-    "OO......PN......OO",
-    "OO.....NPNP.....OO",
-    "OO.....PNPN.....OO",
-    "OO......NP......OO",
-    ".OO............OO.",
-    "..EEOO......OOO...",
-    "..EE..OOOOOO......",
-]
-_PIXEL_COLORS = {"O": "#3b6e8f", "P": DANGER, "N": "#c9d1d9", "E": ACCENT}
+# The logo is a helium-4 nucleus: two protons (P) and two neutrons (N), each a
+# small round blob. Every animation frame jostles the nucleons by a pixel so the
+# nucleus wiggles like it is about to decay.
+NUCLEUS_WIDTH, NUCLEUS_HEIGHT = 10, 10
+# A shaded ball: H is the highlight, X the body.
+NUCLEON_SHAPE = (".HX.", "HXXX", "XXXX", ".XX.")
+NUCLEONS = (("P", 1, 1), ("N", 5, 1), ("N", 1, 5), ("P", 5, 5))
+NUCLEUS_FPS = 8
+# Upper case = body, lower case = highlight.
+_PIXEL_COLORS = {"P": DANGER, "p": "#ffb3b3", "N": "#9aa5b1", "n": "#e6edf3"}
+_JITTER = (-1, 0, 0, 1)
 
 TIPS = (
     'Try "explain how this project is structured"',
@@ -53,27 +51,69 @@ PERMISSION_LABELS = {
 }
 
 
-def logo_lines() -> list[Text]:
-    """Render ATOM with half-block characters: two pixel rows per text line."""
-    width = max(len(row) for row in ATOM)
-    rows = [row.ljust(width, ".") for row in ATOM]
+def nucleus_pixels(frame: int = 0) -> list[str]:
+    """Pixel rows for one animation frame; frame 0 is the resting nucleus."""
+    grid = [["."] * NUCLEUS_WIDTH for _ in range(NUCLEUS_HEIGHT)]
+    rng = random.Random(frame) if frame else None
+    nucleons = list(NUCLEONS)
+    if rng is not None:
+        rng.shuffle(nucleons)  # which nucleon is drawn in front changes too
+    for kind, x0, y0 in nucleons:
+        dx, dy = (rng.choice(_JITTER), rng.choice(_JITTER)) if rng is not None else (0, 0)
+        for sy, row in enumerate(NUCLEON_SHAPE):
+            for sx, cell in enumerate(row):
+                if cell != ".":
+                    grid[y0 + dy + sy][x0 + dx + sx] = kind if cell == "X" else kind.lower()
+    return ["".join(row) for row in grid]
+
+
+def current_frame() -> int:
+    """Frame number for the wiggle animation, derived from the clock (never 0)."""
+    return int(time.monotonic() * NUCLEUS_FPS) % 100_000 + 1
+
+
+def _pixel_cells(rows: list[str]) -> list[list[tuple[str, str | None, str | None]]]:
+    """Fold pixel rows into terminal cells (char, fg, bg) using half blocks."""
     if len(rows) % 2:
-        rows.append("." * len(rows[0]))
-    lines: list[Text] = []
+        rows = [*rows, "." * len(rows[0])]
+    lines = []
     for top_row, bottom_row in zip(rows[0::2], rows[1::2]):
-        line = Text()
+        cells = []
         for top, bottom in zip(top_row, bottom_row):
-            top_color = _PIXEL_COLORS.get(top)
-            bottom_color = _PIXEL_COLORS.get(bottom)
+            top_color, bottom_color = _PIXEL_COLORS.get(top), _PIXEL_COLORS.get(bottom)
             if top_color and bottom_color:
-                line.append("▀", style=f"{top_color} on {bottom_color}")
+                cells.append(("▀", top_color, bottom_color))
             elif top_color:
-                line.append("▀", style=top_color)
+                cells.append(("▀", top_color, None))
             elif bottom_color:
-                line.append("▄", style=bottom_color)
+                cells.append(("▄", bottom_color, None))
             else:
-                line.append(" ")
+                cells.append((" ", None, None))
+        lines.append(cells)
+    return lines
+
+
+def logo_lines(frame: int = 0) -> list[Text]:
+    """The nucleus as Rich text lines (two pixel rows per line)."""
+    lines = []
+    for cells in _pixel_cells(nucleus_pixels(frame)):
+        line = Text()
+        for char, fg, bg in cells:
+            style = f"{fg} on {bg}" if fg and bg else (fg or "")
+            line.append(char, style=style)
         lines.append(line)
+    return lines
+
+
+def _logo_fragments(frame: int) -> list[list[tuple[str, str]]]:
+    """The nucleus as prompt_toolkit fragments, one list per terminal line."""
+    lines = []
+    for cells in _pixel_cells(nucleus_pixels(frame)):
+        fragments = []
+        for char, fg, bg in cells:
+            style = " ".join(part for part in (f"fg:{fg}" if fg else "", f"bg:{bg}" if bg else "") if part)
+            fragments.append((style, char))
+        lines.append(fragments)
     return lines
 
 
@@ -107,30 +147,70 @@ def endpoint_label(api_url: str | None) -> str:
     return host or "no endpoint configured"
 
 
-def welcome_header(*, workspace: Path, model: str, api_url: str | None, notes: list[str] | None = None) -> RenderableType:
-    """Atom logo on the left; name, model, and folder on the right; notes underneath."""
-    info = [
-        Text.assemble(("Helium Agent", "bold"), (f" v{app_version()}", "dim")),
-        Text.assemble((model or "no model set", ""), (" · ", "dim"), (endpoint_label(api_url), "dim")),
-        Text(short_path(workspace), style="dim"),
-    ]
-    art = logo_lines()
+@dataclass(frozen=True)
+class HeaderInfo:
+    workspace: Path
+    model: str
+    api_url: str | None
+    notes: tuple[str, ...] = ()
+
+    def info_lines(self) -> list[list[tuple[str, str]]]:
+        """Right-hand column as (style, text) pairs, shared by Rich and prompt_toolkit."""
+        return [
+            [("bold", "Helium Agent"), ("dim", f" v{app_version()}")],
+            [("", self.model or "no model set"), ("dim", " · "), ("dim", endpoint_label(self.api_url))],
+            [("dim", short_path(self.workspace))],
+        ]
+
+
+def _info_row_index(logo_height: int, info_count: int) -> int:
+    return max(0, (logo_height - info_count) // 2)
+
+
+def welcome_header(
+    *, workspace: Path, model: str, api_url: str | None, notes: list[str] | None = None, frame: int = 0
+) -> RenderableType:
+    """Static header for scrollback: nucleus, then name/model/folder, then notes."""
+    header = HeaderInfo(workspace, model, api_url, tuple(notes or ()))
+    art = logo_lines(frame)
+    info = [Text.assemble(*[(text, style) for style, text in line]) for line in header.info_lines()]
+    offset = _info_row_index(len(art), len(info))
     grid = Table.grid(padding=(0, 3))
     grid.add_column(no_wrap=True)
     grid.add_column()
-    for index in range(max(len(art), len(info))):
-        grid.add_row(
-            art[index] if index < len(art) else Text(""),
-            info[index] if index < len(info) else Text(""),
-        )
+    for index, logo_line in enumerate(art):
+        info_index = index - offset
+        grid.add_row(logo_line, info[info_index] if 0 <= info_index < len(info) else Text(""))
 
     parts: list[RenderableType] = [Text(""), grid]
-    if notes:
+    if header.notes:
         parts.append(Text(""))
-        for note in notes:
+        for note in header.notes:
             parts.append(Text.assemble(("  ⎿  ", "dim"), (note, "dim")))
     parts.append(Text(""))
     return Group(*parts)
+
+
+def header_fragments(header: HeaderInfo, frame: int) -> list[tuple[str, str]]:
+    """The same header as prompt_toolkit fragments, redrawn each frame to animate."""
+    styles = {"bold": "bold", "dim": "#8b949e", "": ""}
+    art = _logo_fragments(frame)
+    info = header.info_lines()
+    offset = _info_row_index(len(art), len(info))
+    out: list[tuple[str, str]] = [("", "\n")]
+    for index, logo_line in enumerate(art):
+        out.extend(logo_line)
+        info_index = index - offset
+        if 0 <= info_index < len(info):
+            out.append(("", "   "))
+            out.extend((styles.get(style, style), text) for style, text in info[info_index])
+        out.append(("", "\n"))
+    if header.notes:
+        out.append(("", "\n"))
+        for note in header.notes:
+            out.append(("#8b949e", f"  ⎿  {note}\n"))
+    out.append(("", "\n"))
+    return out
 
 
 def assistant_block(content: str | RenderableType, *, markdown: bool = True, bullet_style: str = ACCENT) -> RenderableType:
@@ -200,6 +280,29 @@ def prompt_message() -> FormattedText:
     return FormattedText([("class:rule", "─" * _columns() + "\n"), ("class:prompt-arrow", "❯ ")])
 
 
+def make_prompt_message(header: HeaderInfo | None = None) -> Callable[[], FormattedText]:
+    """Prompt chrome, optionally with the animated header above it.
+
+    prompt_toolkit redraws the message on every refresh, so the nucleus keeps
+    wiggling while the user is typing. Once the input is accepted, the header is
+    drawn in its resting frame and stays in the scrollback.
+    """
+    if header is None:
+        return prompt_message
+
+    def message() -> FormattedText:
+        try:
+            from prompt_toolkit.application import get_app
+
+            done = get_app().is_done
+        except Exception:
+            done = True
+        frame = 0 if done else current_frame()
+        return FormattedText([*header_fragments(header, frame), *prompt_message()])
+
+    return message
+
+
 def make_bottom_toolbar(status: Callable[[], dict[str, str]]) -> Callable[[], FormattedText]:
     """Status bar under the input: permission mode, model, usage, and key hints."""
 
@@ -233,7 +336,12 @@ __all__ = [
     "PROMPT_STYLE",
     "assistant_block",
     "make_bottom_toolbar",
+    "HeaderInfo",
+    "NUCLEUS_FPS",
+    "header_fragments",
     "logo_lines",
+    "make_prompt_message",
+    "nucleus_pixels",
     "prompt_message",
     "random_tip",
     "summarize_tool_counts",
