@@ -43,7 +43,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.filters import has_completions
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import FileHistory
-from utils.commands import BUILTIN_COMMANDS, parse_command
+from utils.commands import BUILTIN_COMMANDS, EXIT_COMMANDS, parse_command
 from utils.completer import WorkspaceFileCompleter
 from utils.stream_render import LiveReply
 from utils.tui import (
@@ -391,7 +391,7 @@ Helium is a local AI assistant for everyday questions, deep research, file-aware
 
 {command_lines}
 - `@path/to/file <question>` - Attach one local file for RAG-backed answers.
-- `quit`, `exit`, or `stop` - End the current text session.
+- `quit`, `exit`, or `stop` - Also end the session (same as `/exit`).
 {skill_lines}
 ## What You Can Ask
 
@@ -732,6 +732,23 @@ def handle_undo_command(user_text: str) -> bool:
     return True
 
 
+def handle_notes_command(user_text: str, workspace: Path) -> bool:
+    args = parse_command(user_text, "/notes")
+    if args is None:
+        return False
+    from utils.notes import append_note, edit_notes
+
+    if args:
+        append_note(workspace, args)
+        print_chat_message("Helium", "Added to your notes. Open them with `/notes`.", style="cyan", markdown=True)
+        return True
+
+    result = edit_notes(workspace)
+    message = {True: "Notes saved.", False: "Discarded your changes to the notes.", None: "Notes unchanged."}[result]
+    console.print(Text(f"  {message}", style="dim"))
+    return True
+
+
 SESSION_COMMAND_HANDLERS = (
     handle_clear_command,
     handle_usage_command,
@@ -1009,7 +1026,7 @@ def main(target_path: str = ".", nuclear: bool = False):
             console.print()
             if not user_text:
                 continue
-            if user_text.lower() in {"quit", "exit", "stop"}:
+            if user_text.lower() in EXIT_COMMANDS:
                 print_goodbye()
                 break
 
@@ -1017,6 +1034,8 @@ def main(target_path: str = ".", nuclear: bool = False):
             if handle_skill_management_command(user_text, workspace, discovered_skills):
                 continue
             if handle_help_command(user_text, discovered_skills):
+                continue
+            if handle_notes_command(user_text, workspace):
                 continue
             if any(handler(user_text) for handler in SESSION_COMMAND_HANDLERS):
                 continue

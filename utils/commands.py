@@ -22,6 +22,8 @@ BUILTIN_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/usage", "/usage", "Show token and tool usage for this session."),
     SlashCommand("/clear", "/clear", "Clear the conversation history (memories and files are kept)."),
     SlashCommand("/skills", "/skills [list|create|remove|help]", "List, create, or remove skills."),
+    SlashCommand("/notes", "/notes [text]", "Open your notes for this folder, or append a quick timestamped note."),
+    SlashCommand("/exit", "/exit", "End the session."),
 )
 
 BUILTIN_SLASH_COMMANDS: tuple[str, ...] = tuple(command.name for command in BUILTIN_COMMANDS)
@@ -37,4 +39,7 @@ def parse_command(user_text: str, name: str) -> str | None:
     return None
 
 
-__all__ = ["BUILTIN_COMMANDS", "BUILTIN_SLASH_COMMANDS", "SlashCommand", "parse_command"]
+EXIT_COMMANDS: frozenset[str] = frozenset({"/exit", "quit", "exit", "stop"})
+
+
+__all__ = ["EXIT_COMMANDS", "BUILTIN_COMMANDS", "BUILTIN_SLASH_COMMANDS", "SlashCommand", "parse_command"]

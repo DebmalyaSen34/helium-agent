@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import main
@@ -59,8 +60,57 @@ class SessionCommandTests(unittest.TestCase):
 
     def test_help_lists_new_commands(self):
         help_text = main.build_help_text()
-        for command in ("/clear", "/model", "/undo", "/usage", "/init"):
+        for command in ("/clear", "/model", "/undo", "/usage", "/init", "/notes", "/exit"):
             self.assertIn(command, help_text)
+
+    def test_exit_command_is_recognised(self):
+        from utils.commands import EXIT_COMMANDS
+
+        self.assertIn("/exit", EXIT_COMMANDS)
+        self.assertIn("exit", EXIT_COMMANDS)
+
+
+class NotesCommandTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.workspace = Path(self._tmp.name) / "project"
+        self.workspace.mkdir()
+        self._env = patch.dict("os.environ", {"HELIUM_DATA_DIR": str(Path(self._tmp.name) / "data")})
+        self._env.start()
+
+    def tearDown(self):
+        self._env.stop()
+        self._tmp.cleanup()
+
+    @patch("main.print_chat_message")
+    def test_notes_with_text_appends_timestamped_lines(self, mock_print):
+        from utils.notes import read_notes
+
+        self.assertTrue(main.handle_notes_command("/notes first thought", self.workspace))
+        self.assertTrue(main.handle_notes_command("/notes second", self.workspace))
+        lines = read_notes(self.workspace).splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("- ") and lines[0].endswith("first thought"))
+        self.assertTrue(lines[1].endswith("second"))
+
+    def test_notes_without_text_opens_editor(self):
+        with patch("utils.notes.edit_notes", return_value=True) as mock_edit, patch("main.console"):
+            self.assertTrue(main.handle_notes_command("/notes", self.workspace))
+        mock_edit.assert_called_once_with(self.workspace)
+
+    def test_other_text_is_not_a_notes_command(self):
+        self.assertFalse(main.handle_notes_command("/notesy", self.workspace))
+        self.assertFalse(main.handle_notes_command("notes", self.workspace))
+
+    def test_notes_are_per_workspace(self):
+        from utils.notes import append_note, read_notes
+
+        other = Path(self._tmp.name) / "other"
+        other.mkdir()
+        append_note(self.workspace, "only here")
+        self.assertEqual(read_notes(other), "")
 
 
 class StreamRenderTests(unittest.TestCase):

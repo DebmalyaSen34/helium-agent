@@ -68,6 +68,8 @@ For more commands type `/help` in the chat.
 | `/usage` | Token and tool usage for this session. |
 | `/clear` | Clear the conversation (memories and files are kept). |
 | `/skills` | List, create, or remove skills. |
+| `/notes [text]` | Open a full-screen notes editor for this folder (Ctrl+S or Esc saves, Ctrl+C discards), or append a quick timestamped note. |
+| `/exit` | End the session (`exit`, `quit`, and `stop` work too). |
 | `@path/to/file <question>` | Ask about a file through the RAG service. |
 
 When Helium asks to run a risky tool, answer `y`, `n`, or `a` to allow that tool (or that exact shell command) for the rest of the session. `helium . --nuclear` skips all confirmations.
