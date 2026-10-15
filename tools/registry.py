@@ -30,9 +30,6 @@ from tools.file_ops import (
 from tools.bash_ops import execute_bash, is_command_safe
 from tools.git_ops import git_diff, git_log, git_status
 from tools.test_runner import run_tests
-from tools.search.browse_url import browse_url
-from tools.web_search import search_web
-from tools.research.pipeline import research_query
 from tools.schema import function_to_schema, render_tool_list, validate_args
 from utils.parser import extract_json
 
@@ -53,6 +50,40 @@ class ToolDefinition:
         if self.parameters is not None:
             return self.parameters
         return function_to_schema(self.function, self.param_docs)
+
+
+# The web tools pull in BeautifulSoup and the search providers, which take tens of
+# milliseconds to import; load them on first use instead of at startup. The
+# signatures and docstrings mirror the real functions because tool schemas are
+# built from them.
+def search_web(query: str, num_results: int = 5) -> str:
+    from tools.web_search import search_web as run
+
+    return run(query, num_results=num_results)
+
+
+def research_query(query: str, max_sources: int = 8) -> str:
+    from tools.research.pipeline import research_query as run
+
+    return run(query, max_sources=max_sources)
+
+
+def browse_url(url: str, max_chars: int = 5000) -> str:
+    """Fetches a specific website and extracts clean, readable text.
+
+    JavaScript is not run, so pages that build their content in the browser
+    may return little text.
+
+    Args:
+        url: The URL of the webpage to browse.
+        max_chars: The maximum length of characters to return (defaults to 5000).
+
+    Returns:
+        A string containing the page title and the extracted text.
+    """
+    from tools.search.browse_url import browse_url as run
+
+    return run(url, max_chars=max_chars)
 
 
 def _create_subagent_lazy(*args, **kwargs):
@@ -200,7 +231,7 @@ AVAILABLE_TOOLS: dict[str, ToolDefinition] = {
     ),
     "browse_url": ToolDefinition(
         browse_url,
-        "Opens a specific URL (rendering JavaScript with Playwright when needed) and extracts readable text.",
+        "Opens a specific URL and extracts readable text. Pages that need JavaScript to render may return little text.",
         "safe",
     ),
     # ── memory and system ────────────────────────────────────────────────
@@ -266,12 +297,34 @@ AVAILABLE_TOOLS: dict[str, ToolDefinition] = {
 }
 
 
+# Each request sends every offered tool's schema, so modes offer only what they use.
+# Tools left out (aliases such as create_file, and rarely needed ones such as
+# checksum_file) still run when a skill lists them in its allowed tools.
+_CORE_TOOLS = (
+    "read_file", "edit_file", "write_file", "mkdir", "glob_files", "search_text",
+    "list_directory", "delete_file", "execute_bash", "git_status", "git_diff", "git_log",
+)
+_SUBAGENT_TOOLS = ("create_subagent", "delegate_task", "delete_subagent", "list_subagents")
+TOOLSETS: dict[str, tuple[str, ...]] = {
+    "chat": (*_CORE_TOOLS, "search_web", "research_query", "browse_url",
+             "remember_fact", "retrieve_facts", "forget_fact", "open_app", "get_time"),
+    "code": (*_CORE_TOOLS, "move_file", "run_tests", "search_web", "browse_url", *_SUBAGENT_TOOLS),
+    "subagent": (*_CORE_TOOLS, "move_file", "run_tests", "search_web", "browse_url"),
+}
+
+
+def tools_for(mode: str) -> list[str]:
+    """The tools offered to the model in `mode` ("chat", "code" or "subagent")."""
+    return list(TOOLSETS[mode])
+
+
 # Guidance that applies whichever tool-calling protocol is in use.
-TOOL_POLICY = """<tool_policy>
+_TOOL_POLICY_TEMPLATE = """<tool_policy>
 <file_tools>
 File tools are restricted to the current project root; .git is protected.
 Use file tools instead of execute_bash for reading, searching, and editing files:
 glob_files to find files, search_text to find code, read_file to read it, edit_file to change it.
+When the user writes @path/to/file, they mean that project file: read it with read_file before answering.
 Read a file before editing it. Prefer edit_file over full rewrites; use write_file for new files.
 read_file prefixes lines with numbers; never include those prefixes in edit text.
 delete_file permanently deletes after user confirmation.
@@ -282,13 +335,23 @@ delete_file permanently deletes after user confirmation.
 - Cite sources and URLs when they are present.
 - If the evidence says confidence is low or partial, state that clearly instead of guessing.
 </evidence_handling>
+{subagents}</tool_policy>"""
 
+SUBAGENT_POLICY = """
 <subagent_workflow>
 Subagents are focused child agents for isolated tasks such as reading files, running tests, or searching patterns:
 create_subagent, then delegate_task, read the result, and delete_subagent when done.
 Subagents cannot create further subagents.
 </subagent_workflow>
-</tool_policy>"""
+"""
+
+
+def tool_policy(*, subagents: bool = True) -> str:
+    """Tool guidance for the system prompt; the subagent part only where those tools are offered."""
+    return _TOOL_POLICY_TEMPLATE.format(subagents=SUBAGENT_POLICY if subagents else "")
+
+
+TOOL_POLICY = tool_policy()
 
 
 TEXT_PROTOCOL_CONTRACT = """<json_contract>
@@ -313,10 +376,10 @@ The user wants to inspect a project file, so I should use read_file.
 <example>
 Input: Replace DEBUG = True with DEBUG = False in config.py
 <thought>
-This is a targeted file edit, so I should use replace_text with expected_count.
+This is a targeted file edit, so I should use edit_file.
 </thought>
 <action>
-{"tool": "replace_text", "args": {"path": "config.py", "old": "DEBUG = True", "new": "DEBUG = False", "expected_count": 1}}
+{"tool": "edit_file", "args": {"path": "config.py", "edits": [{"old": "DEBUG = True", "new": "DEBUG = False"}]}}
 </action>
 </example>
 

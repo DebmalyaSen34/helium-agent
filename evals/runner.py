@@ -114,7 +114,7 @@ def run_single_task(task: TaskConfig) -> Dict[str, Any]:
 
 def main():
     parser = argparse.ArgumentParser(description="Helium Agent Eval Harness")
-    parser.add_argument("--suite", choices=["coding", "rag", "all"], default="all")
+    parser.add_argument("--suite", choices=["coding", "files", "all"], default="all")
     args = parser.parse_args()
 
     # Load tasks

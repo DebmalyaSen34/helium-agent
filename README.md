@@ -20,8 +20,8 @@ Helium is still developing and more features are added as you read this. I would
 - **Coding**: `/code` runs an agentic loop that explores the project, plans, edits files with precise multi-edits, runs your tests, and reports what changed. `/undo` reverts its last file change.
 - **Project instructions:** Put a `HELIUM.md` in your project (or let `/init` write one) and Helium follows it in every conversation.
 - **Deep Research:** For queries that include an `in-depth` knowledge and information retrieval Helium will take help of its research tool to provide with most accurate repsonse with proper citations.
-- **Web Search:** It can use `DuckDuckGoSearch` API to get web results and if necessary it will use `playwright` to dig deeper into complex websites all to make sure you get the best answer.
-- **RAG:** Currently a simple RAG pipeline is integrated where only 1 file at a time can be given to Helium and it will respond accordingly. [Future plans to scale this]
+- **Web Search:** It searches with DuckDuckGo and reads the pages it finds as plain HTML. No browser is needed, so pages that only render with JavaScript may return little text.
+- **File questions:** Mention a file with `@path/to/file` and Helium reads it to answer.
 - **Bash execution:** Helium can perform `safe` bash operations in its terminal.
 - **Long-term memory:** Facts and preferences are stored in SQLite, one database per project, and Helium picks up where the last session in that project left off.
 - **Streaming:** Answers stream into the terminal as they are generated, with a line for each tool Helium uses.
@@ -69,8 +69,39 @@ For more commands type `/help` in the chat.
 | `/clear` | Clear the conversation (memories and files are kept). |
 | `/skills` | List, create, or remove skills. |
 | `/notes [text]` | Open a full-screen notes editor for this folder (Ctrl+S or Esc saves, Ctrl+C discards), or append a quick timestamped note. |
+| `/theme [name]` | Browse themes with a live preview (↑/↓, enter to pick), switch by name, or create your own. |
 | `/exit` | End the session (`exit`, `quit`, and `stop` work too). |
-| `@path/to/file <question>` | Ask about a file through the RAG service. |
+| `@path/to/file <question>` | Ask about a file; Helium reads it to answer. |
+
+### Themes
+
+Helium ships with popular themes: `helium` (default), `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`, `catppuccin-mocha`, `one-dark`, `monokai`, `solarized-dark`, and, for light terminals, `solarized-light` and `github-light`. A theme colours the prompt, replies, tool lines, code blocks, syntax highlighting, and diffs.
+
+```text
+/theme                      browse themes with ↑/↓ and a live preview; enter picks, esc keeps yours
+/theme list                 list themes with colour swatches
+/theme dracula              switch (and remember it for next time)
+/theme preview nord         see a sample without switching
+/theme create mine from nord   start your own theme
+```
+
+`/theme create` writes a TOML file with every colour filled in from the base theme. Edit it, then run `/theme mine` to load it (run it again after each edit). Lines you delete are inherited from `base`, and diff tints and the code-block background are mixed from your colours unless you set them:
+
+```toml
+base = "nord"
+dark = true
+
+[colors]
+accent = "#ff79c6"
+warning = "#f1fa8c"
+
+[syntax]
+style = "nord"                # any Pygments style
+keyword = "bold #ff79c6"      # then refine individual tokens
+comment = "italic #6272a4"
+```
+
+`HELIUM_THEME=<name>` overrides the saved choice for one run. Pick a theme that matches your terminal's background; Helium doesn't repaint the background itself.
 
 When Helium asks to run a risky tool, answer `y`, `n`, or `a` to allow that tool (or that exact shell command) for the rest of the session. `helium . --nuclear` skips all confirmations.
 
@@ -86,8 +117,6 @@ By default (`tool_mode = "auto"` in [`config/settings.toml`](config/settings.tom
 
 > [!NOTE]
 > Use this if you just want to chat without worrying the technical complexities but make sure to have you `env` configured accordingly.
->
-> It will take care of RAG pipeline automatically.
 
 You can build and run the entire terminal application using:
 
@@ -128,13 +157,6 @@ The API container is configured to reach host services through `host.docker.inte
 
    ```bash
    pip install -r requirements.txt
-   pip install -r requirements-rag.txt
-   ```
-
-4. Doctor command for RAG check:
-
-   ```bash
-   python -m rag_service doctor
    ```
 
 ## Local Services
@@ -179,7 +201,7 @@ reasoning_effort = "high"   # none | low | high | max
 
 ### Use LLM API
 
-Run `helium` and follow the setup wizard. The API key, URL, model, and Playwright toggle are saved to `config.toml` in your user Helium config directory, readable only by your user (`chmod 600`).
+Run `helium` and follow the setup wizard. The API key, URL, and model are saved to `config.toml` in your user Helium config directory, readable only by your user (`chmod 600`). Run `helium --setup` to change them later.
 
 You can still use environment variables for CI, Docker, or temporary overrides:
 
@@ -190,30 +212,6 @@ LLM_MODEL=your-model
 ```
 
 If you previously used `~/.helium.env`, Helium can import it into the config file during setup. The legacy file is left untouched, so remove it yourself after confirming the import worked.
-
-### Start Playwright
-
-Helium comes with playwright compatibility. So, if you want to get more in-depth results from web you can turn on this feature by updating `use_playwright=true` in `config/settings.toml`
-
-Then install playwright and chromium.
-
-```bash
-pip install playwright
-playright install chromium
-```
-
-> These are not added in `requirements.txt` because Helium aims to be lightweight. But you can do whatever you want!
-
-> [!TIP]
-> Playwright is heavy as it downloads chromium so it can take some of your memory. Use with caution.
-
-### Start RAG pipeline
-
-Helium comes with its own RAG pipeline. This allows you to add files with `@` prefix to the file path to your file. Then you can ask anything about that file.
-
-Retrieval is lexical (keyword-based), so it needs no model downloads. It is good at answering what is inside a file, summarizing it, and other basic questions.
-
-This is an **optional** feature. Look into `rag_service` directory for more detail.
 
 ## Run The Assistant
 
@@ -243,11 +241,11 @@ Why is the Indian Rupee falling recently?
 Give me a report on the latest AI regulation changes in the EU.
 ```
 
-RAG request example:
+File question examples:
 
 ```text
 @README.md what does this project do?
-@docs/plan.pdf summarize the risks
+@main.py explain how a turn is handled
 ```
 
 ## Testing

@@ -14,14 +14,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-COPY requirements.txt requirements-rag.txt ./
+COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r requirements.txt -r requirements-rag.txt
-
-ENV PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.azureedge.net
-
-RUN python -m playwright install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/*
+    uv pip install --system -r requirements.txt
 
 COPY . .
 

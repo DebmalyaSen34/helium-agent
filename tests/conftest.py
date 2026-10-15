@@ -19,5 +19,16 @@ def _isolated_user_data(tmp_path, monkeypatch):
     monkeypatch.setenv("HELIUM_DATA_DIR", str(tmp_path / "helium-data"))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_theme(tmp_path, monkeypatch):
+    """Keep theme files and the saved theme out of the real config directory, and reset after."""
+    from utils.theme import BUILTIN_THEMES, DEFAULT_THEME, apply_theme
+
+    monkeypatch.setenv("HELIUM_CONFIG_DIR", str(tmp_path / "helium-config"))
+    monkeypatch.delenv("HELIUM_THEME", raising=False)
+    yield
+    apply_theme(BUILTIN_THEMES[DEFAULT_THEME])
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "live: calls a real LLM API; opt in with HELIUM_LIVE_DEEPSEEK=1")

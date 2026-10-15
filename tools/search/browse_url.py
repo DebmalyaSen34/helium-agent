@@ -8,8 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 def browse_url(url: str, max_chars: int = 5000) -> str:
-    """Navigates to a specific website, executes JavaScript (using Playwright fallback),
-    and extracts clean, readable text.
+    """Fetches a specific website and extracts clean, readable text.
+
+    JavaScript is not run, so pages that build their content in the browser
+    may return little text.
     
     Args:
         url: The URL of the webpage to browse.

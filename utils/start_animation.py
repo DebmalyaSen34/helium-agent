@@ -190,7 +190,7 @@ def _logo_frames() -> list[list[str]]:
 
     return frames
 
-from utils.system_check import check_internet_connectivity, check_llm_api, check_memory, check_tools, check_rag
+from utils.system_check import check_internet_connectivity, check_llm_api, check_memory, check_tools
 
 
 def _future_ok(
@@ -252,7 +252,6 @@ def render_startup_intro(*, animated: bool = True) -> None:
     fut_internet = executor.submit(check_internet_connectivity)
     fut_llm = executor.submit(check_llm_api)
     fut_memory = executor.submit(check_memory)
-    fut_rag = executor.submit(check_rag)
 
     width = shutil.get_terminal_size((80, 24)).columns
 
@@ -291,7 +290,6 @@ def render_startup_intro(*, animated: bool = True) -> None:
             ("inference engine", GREEN, "ok") if _future_ok(fut_llm, "inference engine") else ("inference engine", RED, "fail"),
             ("session context", GREEN, "ready"),
             ("search access", GREEN, "ready") if _future_ok(fut_internet, "search access") else ("search access", RED, "offline"),
-            ("retrieval augmented generation", GREEN, "ok") if _future_ok(fut_rag, "retrieval augmented generation") else ("retrieval augmented generation", RED, "fail"),
         ]
 
         for _ in range(len(boot_checks) + 1):

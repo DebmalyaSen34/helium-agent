@@ -1,10 +1,5 @@
 rich
 requests
-numpy
 ddgs
 beautifulsoup4
-fastapi
-uvicorn[standard]
-playwright
 prompt-toolkit
-spacy

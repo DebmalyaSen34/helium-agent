@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rich.console import Console
 from rich.table import Table
 
 from skills import loader
 from skills.loader import SKILL_FILENAME, Skill
+from utils.theme import make_console
 
-console = Console()
+console = make_console()
 
 
 SKILL_TEMPLATE = """\
@@ -34,8 +34,8 @@ def list_skills(skills: list[Skill]) -> str:
         return "[dim]No skills installed. Use /skills create <name> to make one.[/dim]"
 
     table = Table(title="Installed Skills", show_lines=True)
-    table.add_column("Name", style="cyan bold")
-    table.add_column("Trigger", style="green")
+    table.add_column("Name", style="accent.bold")
+    table.add_column("Trigger", style="success")
     table.add_column("Description", max_width=50)
     table.add_column("Source", style="dim")
 

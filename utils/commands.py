@@ -23,6 +23,7 @@ BUILTIN_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/clear", "/clear", "Clear the conversation history (memories and files are kept)."),
     SlashCommand("/skills", "/skills [list|create|remove|help]", "List, create, or remove skills."),
     SlashCommand("/notes", "/notes [text]", "Open your notes for this folder, or append a quick timestamped note."),
+    SlashCommand("/theme", "/theme [name|list|preview|create]", "Browse colour themes with live previews, switch, or create your own."),
     SlashCommand("/exit", "/exit", "End the session."),
 )
 

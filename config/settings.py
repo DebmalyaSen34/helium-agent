@@ -44,47 +44,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "parallel_safe_tools": True,
     },
     "browser": {
-        "use_playwright": os.getenv("USE_PLAYWRIGHT", "true").lower() == "true",
-        "fallback_only": True,
         "timeout_seconds": 8.0,
-        "headless": True,
-    },
-    "rag_service": {
-        "enabled": True,
-        "service_url": "http://127.0.0.1:8765",
-        "host": "127.0.0.1",
-        "port": 8765,
-        "auto_start": False,
-        "fail_closed": True,
-        "safe_roots": ["."],
-        "cache_dir": ".cache/rag_service",
-        "max_bytes_per_file": 25_000_000,
-        "evidence_budget_chars": 16_000,
-        "full_text_budget_chars": 12_000,
-        "max_chunks": 600,
-        "max_candidates": 24,
-        "max_evidence_chunks": 8,
-        "timeout_seconds": 120,
-        "rag_debug": False,
-        "persist_debug_traces": False,
-        "supported_extensions": [
-            ".txt",
-            ".md",
-            ".py",
-            ".js",
-            ".ts",
-            ".tsx",
-            ".jsx",
-            ".json",
-            ".yaml",
-            ".yml",
-            ".toml",
-            ".csv",
-            ".log",
-            ".pdf",
-            ".docx",
-            ".xlsx",
-        ],
     },
     "assistant": {
         "confirm_risky_tools": True,
@@ -128,13 +88,6 @@ def load_settings(path: Path = SETTINGS_FILE) -> dict[str, Any]:
 
     return _deep_merge(DEFAULT_SETTINGS, user_settings)
 
-def _env_bool(name: str) -> bool | None:
-    value = os.getenv(name)
-    if value is None:
-        return None
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
 def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     merged = settings.copy()
 
@@ -146,28 +99,12 @@ def _apply_env_overrides(settings: dict[str, Any]) -> dict[str, Any]:
 
     value_overrides = {
         ("services", "api_model"): os.getenv("LLM_MODEL") or os.getenv("HELIUM_API_MODEL") or (runtime_config.model if runtime_config else None),
-        ("rag_service", "service_url"): os.getenv("HELIUM_RAG_SERVICE_URL"),
-        ("rag_service", "host"): os.getenv("HELIUM_RAG_HOST"),
-        ("rag_service", "port"): os.getenv("HELIUM_RAG_PORT"),
-    }
-
-    runtime_playwright = runtime_config.use_playwright if runtime_config else None
-    bool_overrides = {
-        ("browser", "use_playwright"): _env_bool("USE_PLAYWRIGHT") if _env_bool("USE_PLAYWRIGHT") is not None else runtime_playwright,
-        ("browser", "headless"): _env_bool("PLAYWRIGHT_HEADLESS"),
     }
 
     for (section, key), value in value_overrides.items():
         if value is None:
             continue
         value = value.strip()
-        section_values = dict(merged.get(section, {}))
-        section_values[key] = int(value) if key == "port" else value
-        merged[section] = section_values
-
-    for (section, key), value in bool_overrides.items():
-        if value is None:
-            continue
         section_values = dict(merged.get(section, {}))
         section_values[key] = value
         merged[section] = section_values
@@ -179,8 +116,6 @@ SETTINGS = _apply_env_overrides(load_settings())
 API_MODEL = SETTINGS["services"]["api_model"]
 
 SEARXNG_URL = SETTINGS["services"]["searxng_url"]
-
-RAG_SERVICE_SETTINGS = SETTINGS["rag_service"]
 
 ASSISTANT_SETTINGS = SETTINGS["assistant"]
 LLM_SETTINGS = SETTINGS["llm"]

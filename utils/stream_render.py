@@ -12,9 +12,14 @@ from rich.console import Console
 from rich.live import Live
 from rich.segment import Segment
 
+from utils.code_render import git_diff_view, looks_like_git_diff
 from utils.parser import strip_reasoning
+from utils.theme import current_theme
 
 # A reply that starts with a text-protocol tool call (optionally after a <thought>).
+# Tools whose output may be a git diff worth showing to the user.
+DIFF_TOOLS = frozenset({"git_diff", "execute_bash"})
+
 LEADING_ACTION_RE = re.compile(r"^\s*(?:<thought>.*?</thought>\s*)?<action>", re.DOTALL)
 
 
@@ -49,20 +54,81 @@ def summarize_args(args: dict[str, Any], limit: int = 80) -> str:
     return summary if len(summary) <= limit else summary[: limit - 1] + "…"
 
 
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def stable_split(text: str) -> int:
+    """Index where the last finished Markdown block ends.
+
+    Blocks are separated by a blank line outside a code fence. A split is only made
+    before an unindented line, so list continuations and indented code stay whole.
+    Everything before the index can be rendered once and reused.
+    """
+    split = 0
+    fence: str | None = None
+    blank = False
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if fence is None and blank and stripped and not line[0].isspace():
+            split = pos
+        match = _FENCE_RE.match(line)
+        if match:
+            marker = match.group(1)
+            if fence is None:
+                fence = marker
+            elif marker[0] == fence[0] and len(marker) >= len(fence) and not line.strip()[len(marker):]:
+                fence = None
+        blank = fence is None and not stripped
+        pos += len(line)
+    return split
+
+
 class _TailView:
     """Live renderable that only shows the last screenful of the streamed panel.
 
     Rich can't redraw a live region taller than the terminal (it would scroll and
     duplicate output), so while streaming we keep the region within the screen and
     print the complete answer once streaming ends.
+
+    Re-rendering the whole reply on every refresh grows with its length, so finished
+    blocks are rendered once and cached; each refresh renders only the block still
+    being written.
     """
 
     def __init__(self, reply: "LiveReply") -> None:
         self.reply = reply
+        self._done_text = ""
+        self._done_width = 0
+        self._done_lines: list = []
+
+    def _render(self, console, options, text: str, first: bool) -> list:
+        from rich.padding import Padding
+
+        from utils.code_render import CodeMarkdown
+
+        renderable = self.reply._panel(text) if first else Padding(CodeMarkdown(text), (0, 0, 0, 2))
+        return console.render_lines(renderable, options, pad=False)
 
     def __rich_console__(self, console, options):
-        renderable = self.reply._panel(self.reply._shown)
-        lines = console.render_lines(renderable, options, pad=False)
+        text = self.reply._shown
+        split = stable_split(text)
+        done, tail = text[:split], text[split:]
+        if options.max_width != self._done_width or not done.startswith(self._done_text):
+            self._done_text, self._done_width, self._done_lines = "", options.max_width, []
+        if len(done) > len(self._done_text):
+            new = done[len(self._done_text):]
+            if self._done_lines:
+                self._done_lines = self._done_lines + [[]] + self._render(console, options, new, first=False)
+            else:
+                self._done_lines = self._render(console, options, new, first=True)
+            self._done_text = done
+        lines = list(self._done_lines)
+        if tail.strip():
+            if lines:
+                lines += [[]] + self._render(console, options, tail, first=False)
+            else:
+                lines = self._render(console, options, tail, first=True)
         max_lines = max(4, (options.height or console.height) - 2)
         if len(lines) > max_lines:
             lines = lines[-max_lines:]
@@ -93,7 +159,7 @@ class LiveReply:
         self.label = label
         self.stream_text = should_stream(console) if stream_text is None else stream_text
         self._status = None
-        self._status_message = "[#5fd7ff]Thinking…[/]"
+        self._status_message = f"[{current_theme().accent}]Thinking…[/]"
         self._live: Live | None = None
         self._raw = ""
         self._shown = ""
@@ -116,7 +182,7 @@ class LiveReply:
     def start(self) -> None:
         """Resume the spinner (used after a confirmation prompt)."""
         if self._status is None and self._live is None:
-            self._status = self.console.status(self._status_message, spinner="dots", spinner_style="#5fd7ff")
+            self._status = self.console.status(self._status_message, spinner="dots", spinner_style=current_theme().accent)
             self._status.start()
 
     @_locked
@@ -142,7 +208,8 @@ class LiveReply:
         elif kind == "tool_start":
             self.on_tool_start(payload.get("name", "tool"), payload.get("args") or {})
         elif kind == "tool_end":
-            self.update("[#5fd7ff]Thinking…[/]")
+            self.on_tool_end(payload.get("name", "tool"), payload.get("result"))
+            self.update(f"[{current_theme().accent}]Thinking…[/]")
 
     @_locked
     def on_text(self, delta: str) -> None:
@@ -173,7 +240,19 @@ class LiveReply:
         from utils.tui import tool_line
 
         self.console.print(tool_line(name, summarize_args(args)))
-        self._status_message = f"[#e3b341]Running {name}…[/]"
+        self._status_message = f"[{current_theme().warning}]Running {name}…[/]"
+        self.start()
+
+    @_locked
+    def on_tool_end(self, name: str, result: Any) -> None:
+        """Show diffs the agent looked at, so the user sees them too."""
+        if name not in DIFF_TOOLS or not isinstance(result, str) or not looks_like_git_diff(result):
+            return
+        view = git_diff_view(result)
+        if view is None:
+            return
+        self.stop()
+        self.console.print(view)
         self.start()
 
     @_locked
@@ -211,4 +290,4 @@ class LiveReply:
         return assistant_block(text)
 
 
-__all__ = ["LiveReply", "should_stream", "summarize_args", "visible_text"]
+__all__ = ["LiveReply", "should_stream", "stable_split", "summarize_args", "visible_text"]

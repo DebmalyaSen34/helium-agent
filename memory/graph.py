@@ -5,21 +5,37 @@ from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+SPACY_MODEL = "en_core_web_sm"
 _nlp = None  # Lazy-loaded spaCy model
+_nlp_error: Exception | None = None  # Why loading failed, so it is not retried every call
 
 
 def _get_nlp():
-    """Load spaCy model on first use."""
-    global _nlp
-    if _nlp is None:
+    """Load the spaCy model on first use.
+
+    The model is never downloaded here: that would stall a conversation on a large
+    download. When spaCy or the model is missing this raises, and callers fall back
+    to simple keyword extraction.
+    """
+    global _nlp, _nlp_error
+    if _nlp is not None:
+        return _nlp
+    if _nlp_error is not None:
+        raise _nlp_error
+    try:
         import spacy
-        try:
-            _nlp = spacy.load("en_core_web_sm")
-        except OSError:
-            logger.warning("SpaCy model 'en_core_web_sm' not found. Attempting to download...")
-            from spacy.cli.download import download
-            download("en_core_web_sm")
-            _nlp = spacy.load("en_core_web_sm")
+
+        _nlp = spacy.load(SPACY_MODEL)
+    except (ImportError, OSError) as exc:
+        if isinstance(exc, OSError):
+            logger.warning(
+                "spaCy model '%s' is not installed; using simple keyword extraction. "
+                "Install it with: python -m spacy download %s",
+                SPACY_MODEL,
+                SPACY_MODEL,
+            )
+        _nlp_error = exc
+        raise
     return _nlp
 
 @dataclass

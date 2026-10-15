@@ -194,7 +194,7 @@ class ProviderKeyPrecedenceTests(unittest.TestCase):
                 if name not in env:
                     os.environ.pop(name, None)
             store = RuntimeConfigStore(config_path=Path(tmp) / "config.toml")
-            store.save(api_key=saved_key, api_url="http://localhost:11434/v1/chat/completions", model="llama3", use_playwright=False)
+            store.save(api_key=saved_key, api_url="http://localhost:11434/v1/chat/completions", model="llama3")
             return store.load()
 
     def test_provider_key_env_beats_a_key_saved_for_another_provider(self):

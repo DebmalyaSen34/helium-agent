@@ -147,7 +147,7 @@ class InterruptTests(unittest.TestCase):
 
         calls, goodbye = self._run_repl(
             ["hello", "exit"],
-            **{"main.generate_response": interrupted, "main.prepare_rag_prompt": lambda text: text},
+            **{"main.generate_response": interrupted},
         )
         self.assertEqual(calls, 2)  # the session kept going after the interrupt
         goodbye.assert_called_once()

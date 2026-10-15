@@ -16,7 +16,6 @@ class StartupCheckTests(unittest.TestCase):
             api_key="key",
             api_url="http://127.0.0.1:9999/v1/chat/completions",
             model="local-model",
-            use_playwright=True,
             sources={},
         )
 
@@ -60,7 +59,6 @@ class StartupCheckTests(unittest.TestCase):
             api_key="key",
             api_url="https://api.example/v1/chat/completions",
             model="runtime-model",
-            use_playwright=True,
             sources={},
         )
         mock_stream.return_value = ["hello"]
@@ -88,7 +86,6 @@ class StartupCheckTests(unittest.TestCase):
             api_key=None,
             api_url=None,
             model=None,
-            use_playwright=None,
             sources={},
         )
         mock_check.return_value = False
@@ -97,7 +94,6 @@ class StartupCheckTests(unittest.TestCase):
             "secret-key",
             "https://api.example/v1/chat/completions",
             "runtime-model",
-            "true",
         ]
 
         self.assertTrue(ensure_llm_runtime_config())
@@ -106,7 +102,6 @@ class StartupCheckTests(unittest.TestCase):
             api_key="secret-key",
             api_url="https://api.example/v1/chat/completions",
             model="runtime-model",
-            use_playwright=True,
         )
 
 
@@ -120,7 +115,7 @@ class StartupCheckTests(unittest.TestCase):
         from main import ensure_llm_runtime_config
 
         mock_parse_legacy.return_value = {}
-        mock_load.return_value = LlmRuntimeConfig(api_key=None, api_url=None, model=None, use_playwright=None, sources={})
+        mock_load.return_value = LlmRuntimeConfig(api_key=None, api_url=None, model=None, sources={})
         mock_check.return_value = False
 
         def answer(prompt, *args, **kwargs):
@@ -141,7 +136,6 @@ class StartupCheckTests(unittest.TestCase):
             api_key="sk-test",
             api_url="https://api.deepseek.com/chat/completions",
             model="deepseek-flash",
-            use_playwright=False,
         )
 
 

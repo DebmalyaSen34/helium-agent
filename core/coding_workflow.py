@@ -7,6 +7,7 @@ from typing import Any
 from config.settings import AGENT_SETTINGS
 from core.llm import run_agent
 from core.prompts import build_system_prompt
+from tools.registry import tools_for
 
 CODING_AUTO_APPROVED_TOOLS = frozenset(
     {
@@ -59,7 +60,7 @@ def _coding_rules(task: str) -> str:
         "1. Explore: inspect relevant files before editing. Use glob_files and search_text to locate code, "
         "then read_file the parts you need. Batch independent reads in one turn when you can.\n"
         "2. Plan: write a short task plan (3-6 bullets) before making changes, and keep it updated as you learn.\n"
-        "3. Edit: prefer targeted edits with edit_file (or replace_text / patch_file); use write_file only for new files "
+        "3. Edit: prefer targeted edits with edit_file; use write_file only for new files "
         "or complete rewrites. Keep diffs minimal and do not reformat unrelated code.\n"
         "4. Verify: run focused verification when the task changes code, tests, or configuration "
         "(run_tests with a focused command, or execute_bash). Read failures carefully and fix the cause.\n"
@@ -210,6 +211,7 @@ def run_coding_workflow(
         system_prompt,
         task,
         confirm_tool=confirm_for_coding,
+        tool_names=tools_for("code"),
         max_turns=max_turns or int(AGENT_SETTINGS.get("code_max_turns", 40)),
         on_event=on_event,
         execute_tool_call=execute_for_coding,

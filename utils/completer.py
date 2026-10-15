@@ -1,3 +1,4 @@
+import heapq
 import os
 import time
 from typing import Any
@@ -26,13 +27,18 @@ COMPLETION_IGNORED_DIRS = {
     "dist",
     "build",
 }
-FILE_CACHE_SECONDS = 2.0
+# A rescan walks the whole tree, so the list is kept for a while; a change in the
+# top folder (a new file or directory there) still refreshes it at once.
+FILE_CACHE_SECONDS = 30.0
+MAX_INDEXED_FILES = 20_000
+MAX_FILE_SUGGESTIONS = 50
 
 
 class WorkspaceFileCompleter(Completer):
     def __init__(self, skills: list[Any] | None = None):
         self._skills = skills or []
         self._file_cache: list[str] = []
+        self._file_cache_lower: list[str] = []
         self._file_cache_key: tuple[str, float] | None = None
         self._file_cache_time = 0.0
 
@@ -64,8 +70,12 @@ class WorkspaceFileCompleter(Completer):
                     rel_path = rel_path[2:]
                 if not rel_path.startswith("."):
                     files.append(rel_path)
+            if len(files) >= MAX_INDEXED_FILES:
+                del files[MAX_INDEXED_FILES:]
+                break
 
         self._file_cache = files
+        self._file_cache_lower = [f.lower() for f in files]
         self._file_cache_key = key
         self._file_cache_time = now
         return files
@@ -81,6 +91,17 @@ class WorkspaceFileCompleter(Completer):
                     yield Completion(sub, start_position=-len(partial))
             return
 
+        # /theme names (and /theme preview <name>)
+        if text.startswith("/theme ") and (text.count(" ") == 1 or (text.startswith("/theme preview ") and text.count(" ") == 2)):
+            from utils.theme import available_themes
+
+            partial = text.rsplit(" ", 1)[1]
+            extras = ["list", "preview", "create"] if text.count(" ") == 1 else []
+            for name in [*available_themes(), *extras]:
+                if name.startswith(partial):
+                    yield Completion(name, start_position=-len(partial))
+            return
+
         # Slash command completion (including skill triggers)
         if text.startswith("/") and " " not in text:
             for command in self._slash_commands():
@@ -91,6 +112,21 @@ class WorkspaceFileCompleter(Completer):
         # Trigger autocomplete when typing after the '@' mention symbol
         if "@" in text:
             query = text.split("@")[-1]
-            for f in self._workspace_files():
-                if query.lower() in f.lower():
-                    yield Completion(f, start_position=-len(query))
+            if any(ch.isspace() for ch in query):
+                return  # the mention is finished; the user is typing the question
+            for f in self._file_matches(query):
+                yield Completion(f, start_position=-len(query))
+
+    def _file_matches(self, query: str) -> list[str]:
+        """The best few files containing `query`: name matches first, then shorter paths."""
+        files = self._workspace_files()
+        needle = query.lower()
+
+        def rank(index: int) -> tuple[int, int, str]:
+            path = self._file_cache_lower[index]
+            name = os.path.basename(path)
+            tier = 0 if name.startswith(needle) else 1 if path.startswith(needle) else 2 if needle in name else 3
+            return tier, len(path), path
+
+        matches = (i for i, path in enumerate(self._file_cache_lower) if needle in path)
+        return [files[i] for i in heapq.nsmallest(MAX_FILE_SUGGESTIONS, matches, key=rank)]

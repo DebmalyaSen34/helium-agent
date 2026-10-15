@@ -6,6 +6,7 @@ from typing import Any
 
 from core.subagent import SubAgent, SubAgentStatus, AgentRegistry
 from core.llm import AgenticLoop
+from tools.registry import tools_for
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +132,7 @@ class SubAgentManager:
             }
             if ask_model is None:
                 loop_kwargs["model"] = model or default_model()
-            if agent.allowed_tools:
-                loop_kwargs["tool_names"] = sorted(agent.allowed_tools)
+            loop_kwargs["tool_names"] = sorted(agent.allowed_tools) if agent.allowed_tools else tools_for("subagent")
 
             loop = AgenticLoop(**loop_kwargs)
             result = loop.run(

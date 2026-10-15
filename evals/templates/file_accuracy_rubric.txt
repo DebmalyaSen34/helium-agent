@@ -1,6 +1,6 @@
-# Rubric: RAG Synthesis & Factual Accuracy
+# Rubric: File Q&A Factual Accuracy
 
-The agent was asked to answer a question by retrieving facts from a specific attached file.
+The agent was asked to answer a question using facts from a specific file it was pointed at with @.
 Score the agent from 0.0 to 1.0 based on the following criteria:
 
 - **Factual Completeness (50%)**: Did the agent correctly extract and list the exact commands or specifications requested?

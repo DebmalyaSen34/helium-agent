@@ -12,24 +12,20 @@ def test_env_values_override_stored_keyring_and_user_config(tmp_path, monkeypatc
         api_key="stored-key",
         api_url="https://stored.example/v1",
         model="stored-model",
-        use_playwright=False,
     )
     monkeypatch.setenv("LLM_API_KEY", "env-key")
     monkeypatch.setenv("LLM_API_URL", "https://env.example/v1")
     monkeypatch.setenv("LLM_MODEL", "env-model")
-    monkeypatch.setenv("USE_PLAYWRIGHT", "true")
 
     loaded = store.load()
 
     assert loaded.api_key == "env-key"
     assert loaded.api_url == "https://env.example/v1"
     assert loaded.model == "env-model"
-    assert loaded.use_playwright is True
     assert loaded.sources == {
         "api_key": "env:LLM_API_KEY",
         "api_url": "env:LLM_API_URL",
         "model": "env:LLM_MODEL",
-        "use_playwright": "env:USE_PLAYWRIGHT",
     }
     assert os.environ["LLM_API_KEY"] == "env-key"
 
@@ -40,14 +36,12 @@ def test_keyring_and_user_config_values_load_when_env_vars_are_absent(
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("LLM_API_URL", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
-    monkeypatch.delenv("USE_PLAYWRIGHT", raising=False)
     config_path = tmp_path / "config.toml"
     store = RuntimeConfigStore(config_path=config_path)
     store.save(
         api_key="stored-key",
         api_url="https://stored.example/v1",
         model="stored-model",
-        use_playwright=True,
     )
 
     loaded = store.load()
@@ -55,13 +49,11 @@ def test_keyring_and_user_config_values_load_when_env_vars_are_absent(
     assert loaded.api_key == "stored-key"
     assert loaded.api_url == "https://stored.example/v1"
     assert loaded.model == "stored-model"
-    assert loaded.use_playwright is True
     assert loaded.is_complete is True
     assert loaded.sources == {
         "api_key": "user_config",
         "api_url": "user_config",
         "model": "user_config",
-        "use_playwright": "user_config",
     }
 
 
@@ -73,7 +65,6 @@ def test_save_writes_secret_and_non_secret_values_to_config_toml(tmp_path):
         api_key="secret-key",
         api_url="https://api.example/v1",
         model="example-model",
-        use_playwright=False,
     )
 
     assert config_path.exists()
@@ -84,7 +75,6 @@ def test_save_writes_secret_and_non_secret_values_to_config_toml(tmp_path):
     assert 'llm_api_key = "secret-key"' in config_text
     assert 'llm_api_url = "https://api.example/v1"' in config_text
     assert 'llm_model = "example-model"' in config_text
-    assert 'use_playwright = false' in config_text
 
 
 def test_parse_legacy_env_file_parses_llm_values(tmp_path):
@@ -106,7 +96,6 @@ def test_parse_legacy_env_file_parses_llm_values(tmp_path):
         "api_key": "legacy-key",
         "api_url": "https://legacy.example/v1",
         "model": "legacy-model",
-        "use_playwright": False,
     }
 
 
@@ -132,10 +121,10 @@ def test_default_settings_do_not_depend_on_legacy_env_loader():
 
 
 def test_update_changes_one_value_and_keeps_the_rest(tmp_path, monkeypatch):
-    for name in ("LLM_API_KEY", "LLM_API_URL", "LLM_MODEL", "USE_PLAYWRIGHT"):
+    for name in ("LLM_API_KEY", "LLM_API_URL", "LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     store = RuntimeConfigStore(config_path=tmp_path / "config.toml")
-    store.save(api_key="secret", api_url="https://api.example/v1/chat/completions", model="old", use_playwright=False)
+    store.save(api_key="secret", api_url="https://api.example/v1/chat/completions", model="old")
 
     store.update(model="new")
 
@@ -143,4 +132,3 @@ def test_update_changes_one_value_and_keeps_the_rest(tmp_path, monkeypatch):
     assert loaded.model == "new"
     assert loaded.api_key == "secret"
     assert loaded.api_url == "https://api.example/v1/chat/completions"
-    assert loaded.use_playwright is False

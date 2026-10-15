@@ -5,21 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "helium-agent"
 version = "0.2.0"
-description = "A terminal-focused AI agent with RAG and local tool capabilities"
+description = "A terminal-focused AI agent with local tool capabilities"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "rich",
     "requests",
-    "numpy",
     "prompt-toolkit",
     "python-dotenv",
     "pyyaml",
     "ddgs",
     "beautifulsoup4",
-    "fastapi",
-    "uvicorn[standard]",
-    "playwright",
     "platformdirs",
     "tomli; python_version < '3.11'"
 ]
@@ -36,7 +32,6 @@ packages = [
     "tools.search",
     "config",
     "utils",
-    "rag_service",
     "memory",
     "skills"
 ]

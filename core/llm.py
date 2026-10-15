@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
 
-from rich.console import Console
+from utils.theme import make_console
 from config.runtime_config import load_llm_runtime_config
 
 from config.settings import (
@@ -34,11 +34,12 @@ from tools.registry import (
     execute_tool_call as registry_execute_tool_call,
     render_text_protocol_prompt,
     tool_permission,
+    tools_for,
 )
 from utils.parser import extract_json, strip_reasoning
 
 logger = logging.getLogger(__name__)
-console = Console()
+console = make_console()
 
 conversation_history = []
 MAX_HISTORY = 10
@@ -647,7 +648,7 @@ def generate_response(
     """Run one chat turn and yield the reply.
 
     `history_prompt` is what gets remembered for later turns; pass the user's own
-    words when `prompt` was expanded (e.g. with an @file evidence pack) so the
+    words when `prompt` was expanded (e.g. with pasted reference text) so the
     expansion isn't resent with every future request.
     """
     start_time = time.time()
@@ -684,6 +685,7 @@ def generate_response(
             prompt,
             history=conversation_history,
             confirm_tool=confirm_tool,
+            tool_names=tools_for("chat"),
             on_event=handle_event,
         )
         reply = loop_result.final_answer

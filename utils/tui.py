@@ -11,16 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from prompt_toolkit.formatted_text import FormattedText
-from prompt_toolkit.styles import Style
+from prompt_toolkit.styles import DynamicStyle
 from rich.console import Group, RenderableType
-from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
 
-ACCENT = "#5fd7ff"          # helium cyan
-ACCENT_DARK = "#2a9fd6"
-AMBER = "#e3b341"
-DANGER = "#ff6b6b"
+from utils.code_render import CodeMarkdown
+from utils.theme import current_theme, prompt_style, resolve
 
 # The logo is a helium-4 nucleus: two protons (P) and two neutrons (N), each a
 # small round blob. Every animation frame jostles the nucleons by a pixel so the
@@ -30,8 +27,6 @@ NUCLEUS_WIDTH, NUCLEUS_HEIGHT = 10, 10
 NUCLEON_SHAPE = (".HX.", "HXXX", "XXXX", ".XX.")
 NUCLEONS = (("P", 1, 1), ("N", 5, 1), ("N", 1, 5), ("P", 5, 5))
 NUCLEUS_FPS = 8
-# Upper case = body, lower case = highlight.
-_PIXEL_COLORS = {"P": DANGER, "p": "#ffb3b3", "N": "#9aa5b1", "n": "#e6edf3"}
 _JITTER = (-1, 0, 0, 1)
 
 TIPS = (
@@ -76,11 +71,12 @@ def _pixel_cells(rows: list[str]) -> list[list[tuple[str, str | None, str | None
     """Fold pixel rows into terminal cells (char, fg, bg) using half blocks."""
     if len(rows) % 2:
         rows = [*rows, "." * len(rows[0])]
+    colors = current_theme().logo_colors  # upper case = body, lower case = highlight
     lines = []
     for top_row, bottom_row in zip(rows[0::2], rows[1::2]):
         cells = []
         for top, bottom in zip(top_row, bottom_row):
-            top_color, bottom_color = _PIXEL_COLORS.get(top), _PIXEL_COLORS.get(bottom)
+            top_color, bottom_color = colors.get(top), colors.get(bottom)
             if top_color and bottom_color:
                 cells.append(("▀", top_color, bottom_color))
             elif top_color:
@@ -193,7 +189,7 @@ def welcome_header(
 
 def header_fragments(header: HeaderInfo, frame: int) -> list[tuple[str, str]]:
     """The same header as prompt_toolkit fragments, redrawn each frame to animate."""
-    styles = {"bold": "bold", "dim": "#8b949e", "": ""}
+    styles = {"bold": "bold", "dim": "class:info-dim", "": ""}
     art = _logo_fragments(frame)
     info = header.info_lines()
     offset = _info_row_index(len(art), len(info))
@@ -208,27 +204,67 @@ def header_fragments(header: HeaderInfo, frame: int) -> list[tuple[str, str]]:
     if header.notes:
         out.append(("", "\n"))
         for note in header.notes:
-            out.append(("#8b949e", f"  ⎿  {note}\n"))
+            out.append(("class:info-dim", f"  ⎿  {note}\n"))
     out.append(("", "\n"))
     return out
 
 
-def assistant_block(content: str | RenderableType, *, markdown: bool = True, bullet_style: str = ACCENT) -> RenderableType:
+def assistant_block(content: str | RenderableType, *, markdown: bool = True, bullet_style: str = "accent") -> RenderableType:
     """A reply rendered as `● text`, with wrapped lines aligned under the text."""
-    body = Markdown(content) if markdown and isinstance(content, str) else (Text(content) if isinstance(content, str) else content)
+    body = CodeMarkdown(content) if markdown and isinstance(content, str) else (Text(content) if isinstance(content, str) else content)
     grid = Table.grid(padding=(0, 1))
     grid.add_column(width=1, no_wrap=True)
     grid.add_column(ratio=1)
-    grid.add_row(Text("●", style=bullet_style), body)
+    grid.add_row(Text("●", style=resolve(bullet_style)), body)
     return grid
 
 
 def tool_line(name: str, summary: str) -> Text:
     line = Text("  ⎿  ", style="dim")
-    line.append(name, style=f"bold {ACCENT_DARK}")
+    line.append(name, style=f"bold {current_theme().accent_alt}")
     if summary:
         line.append(f"  {summary}", style="dim")
     return line
+
+
+_PREVIEW_REPLY = """Found it. `total()` ignored quantities:
+
+```python
+def total(items: list[Item]) -> float:
+    # Sum price × quantity for every line item
+    return sum(i.price * i.qty for i in items)
+```"""
+
+
+def theme_swatch(theme) -> Text:
+    """A strip of the theme's main colours."""
+    swatch = Text()
+    for color in (theme.accent, theme.accent_alt, theme.success, theme.warning, theme.danger, theme.muted):
+        swatch.append("██", style=color)
+    return swatch
+
+
+def theme_preview() -> RenderableType:
+    """A small sample of replies, tools, code, and a diff in the active theme."""
+    from utils.code_render import DiffView, diff_rows
+
+    diff = DiffView(
+        diff_rows("def total(items):\n    return sum(i.price for i in items)\n", "def total(items):\n    return sum(i.price * i.qty for i in items)\n"),
+        "cart.py",
+    )
+    status = Text.assemble(
+        ("  ✓ tests passed", resolve("success")), ("   ", ""), ("⚠ 1 warning", resolve("warning")), ("   ", ""), ("✗ 0 errors", resolve("danger"))
+    )
+    return Group(
+        tool_line("read_file", "path=cart.py"),
+        tool_line("edit_file", "path=cart.py"),
+        Text(""),
+        diff,
+        Text(""),
+        assistant_block(_PREVIEW_REPLY),
+        Text(""),
+        status,
+    )
 
 
 def summarize_tool_counts(tools_used: str | list[str]) -> str:
@@ -247,20 +283,8 @@ def random_tip() -> str:
 
 # ── prompt_toolkit chrome ────────────────────────────────────────────────────
 
-PROMPT_STYLE = Style.from_dict(
-    {
-        "rule": "#30363d",
-        "prompt-arrow": f"bold {ACCENT}",
-        "placeholder": "#6e7681 italic",
-        "bottom-toolbar": "noreverse bg:default #8b949e",
-        "bottom-toolbar.text": "noreverse",
-        "mode": f"bold {AMBER}",
-        "mode-danger": f"bold {DANGER}",
-        "mode-edits": f"bold {ACCENT}",
-        "hint": "#6e7681",
-        "model": "#8b949e",
-    }
-)
+# Follows the active theme, so /theme restyles the prompt immediately.
+PROMPT_STYLE = DynamicStyle(prompt_style)
 
 
 def _columns() -> int:
@@ -345,6 +369,8 @@ __all__ = [
     "prompt_message",
     "random_tip",
     "summarize_tool_counts",
+    "theme_preview",
+    "theme_swatch",
     "tool_line",
     "welcome_header",
 ]

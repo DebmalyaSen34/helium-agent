@@ -21,7 +21,6 @@ HTML = """
 """
 
 
-@patch("tools.search.fetcher.BROWSER_SETTINGS", {"use_playwright": False, "fallback_only": True})
 class ContentFetcherTests(unittest.TestCase):
     def test_fetcher_extracts_headings_lists_paragraphs_and_tables(self):
         response = Mock()
@@ -54,8 +53,7 @@ class ContentFetcherTests(unittest.TestCase):
                 raise RuntimeError("network down")
             return ok_response
 
-        with patch("tools.search.fetcher.requests.get", side_effect=fake_get), \
-             patch("tools.search.fetcher.BROWSER_SETTINGS", {"use_playwright": False, "fallback_only": True}):
+        with patch("tools.search.fetcher.requests.get", side_effect=fake_get):
             pages = ContentFetcher(timeout=1.0).fetch([first, duplicate, failing])
 
         self.assertEqual(len(pages), 2)
@@ -80,8 +78,7 @@ class ContentFetcherTests(unittest.TestCase):
         response.text = html_with_nav
 
         result = SearchResult("Result Title", "https://example.com/test", "snippet", "ddgs", 1, "query")
-        with patch("tools.search.fetcher.BROWSER_SETTINGS", {"use_playwright": False, "fallback_only": True}), \
-             patch("tools.search.fetcher.requests.get", return_value=response):
+        with patch("tools.search.fetcher.requests.get", return_value=response):
             pages = ContentFetcher(timeout=1.0).fetch([result])
 
         self.assertEqual(len(pages), 1)
@@ -90,6 +87,19 @@ class ContentFetcherTests(unittest.TestCase):
         self.assertNotIn("Footer Menu Content", pages[0].text)
         self.assertIn("Core Heading", pages[0].text)
         self.assertIn("Core Paragraph text here.", pages[0].text)
+
+
+    def test_fetcher_flags_pages_that_need_javascript(self):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.text = "<html><head><title>App</title></head><body><p>Please enable JavaScript to continue.</p></body></html>"
+
+        result = SearchResult("App", "https://example.com/app", "", "ddgs", 1, "query")
+        with patch("tools.search.fetcher.requests.get", return_value=response):
+            pages = ContentFetcher(timeout=1.0).fetch([result])
+
+        self.assertTrue(pages[0].ok)
+        self.assertIn("builds its content with JavaScript", pages[0].text)
 
 
 if __name__ == "__main__":

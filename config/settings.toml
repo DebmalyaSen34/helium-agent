@@ -1,26 +1,6 @@
 [services]
 searxng_url = "http://127.0.0.1:8080/search"
 
-[rag_service]
-enabled = true
-service_url = "http://127.0.0.1:8765"
-host = "127.0.0.1"
-port = 8765
-auto_start = false
-fail_closed = true
-safe_roots = ["."]
-cache_dir = ".cache/rag_service"
-max_bytes_per_file = 25000000
-evidence_budget_chars = 16000
-full_text_budget_chars = 12000
-max_chunks = 600
-max_candidates = 24
-max_evidence_chunks = 8
-timeout_seconds = 120
-rag_debug = false
-persist_debug_traces = false
-supported_extensions = [".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml", ".toml", ".csv", ".log", ".pdf", ".docx", ".xlsx"]
-
 [assistant]
 confirm_risky_tools = true
 startup_animation = false   # true plays the fusion intro and boot checks before the header
@@ -43,7 +23,4 @@ code_max_turns = 40
 parallel_safe_tools = true
 
 [browser]
-use_playwright = true
-fallback_only = true
 timeout_seconds = 8.0
-headless = true

@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from config.settings import ASSISTANT_PERSONA
-from tools.registry import TOOL_POLICY
+from tools.registry import tool_policy
 
 PromptMode = Literal["chat", "code", "skill", "subagent"]
 
@@ -90,7 +90,7 @@ def build_system_prompt(
     """
     sections: list[str | None] = [
         (persona if persona is not None else ASSISTANT_PERSONA),
-        TOOL_POLICY,
+        tool_policy(subagents=mode == "code"),
         _date_line(),
     ]
 

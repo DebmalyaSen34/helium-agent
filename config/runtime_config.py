@@ -35,7 +35,6 @@ class LlmRuntimeConfig:
     api_key: str | None
     api_url: str | None
     model: str | None
-    use_playwright: bool | None
     sources: dict[str, str]
 
     @property
@@ -47,7 +46,6 @@ class LlmRuntimeConfig:
             "api_key": self.api_key,
             "api_url": self.api_url,
             "model": self.model,
-            "use_playwright": self.use_playwright,
         }
         status: dict[str, Any] = {
             name: {
@@ -66,17 +64,6 @@ def default_user_config_path() -> Path:
     return Path(user_config_dir(APP_NAME)) / "config.toml"
 
 
-def _coerce_bool(value: Any) -> bool | None:
-    if value is None or isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "y", "on"}:
-        return True
-    if text in {"0", "false", "no", "n", "off"}:
-        return False
-    return None
-
-
 def _clean_string(value: Any) -> str | None:
     if value is None:
         return None
@@ -93,7 +80,6 @@ def parse_legacy_env_file(path: Path = LEGACY_ENV_PATH) -> dict[str, Any]:
     key = _clean_string(values.get("LLM_API_KEY"))
     api_url = _clean_string(values.get("LLM_API_URL"))
     model = _clean_string(values.get("LLM_MODEL"))
-    use_playwright = _coerce_bool(values.get("USE_PLAYWRIGHT"))
 
     if key is not None:
         parsed["api_key"] = key
@@ -101,8 +87,6 @@ def parse_legacy_env_file(path: Path = LEGACY_ENV_PATH) -> dict[str, Any]:
         parsed["api_url"] = api_url
     if model is not None:
         parsed["model"] = model
-    if use_playwright is not None:
-        parsed["use_playwright"] = use_playwright
     return parsed
 
 
@@ -121,7 +105,6 @@ class RuntimeConfigStore:
             "api_key": None,
             "api_url": None,
             "model": None,
-            "use_playwright": None,
         }
         sources: dict[str, str] = {}
 
@@ -135,7 +118,6 @@ class RuntimeConfigStore:
             api_key=loaded["api_key"],
             api_url=loaded["api_url"],
             model=loaded["model"],
-            use_playwright=loaded["use_playwright"],
             sources=sources,
         )
 
@@ -144,7 +126,6 @@ class RuntimeConfigStore:
         api_key: str | None,
         api_url: str | None,
         model: str | None,
-        use_playwright: bool | None,
     ) -> None:
         values: dict[str, Any] = {}
         if api_key is not None:
@@ -153,8 +134,6 @@ class RuntimeConfigStore:
             values["llm_api_url"] = api_url
         if model is not None:
             values["llm_model"] = model
-        if use_playwright is not None:
-            values["use_playwright"] = bool(use_playwright)
         self._write_user_config(values)
 
     def update(self, **fields: Any) -> None:
@@ -163,7 +142,6 @@ class RuntimeConfigStore:
             "api_key": "llm_api_key",
             "api_url": "llm_api_url",
             "model": "llm_model",
-            "use_playwright": "use_playwright",
         }
         values = dict(self._read_user_config())
         for name, value in fields.items():
@@ -181,7 +159,6 @@ class RuntimeConfigStore:
             api_key=legacy_values.get("api_key"),
             api_url=legacy_values.get("api_url"),
             model=legacy_values.get("model"),
-            use_playwright=legacy_values.get("use_playwright"),
         )
         return self.load()
 
@@ -217,14 +194,9 @@ class RuntimeConfigStore:
             "api_key": "llm_api_key",
             "api_url": "llm_api_url",
             "model": "llm_model",
-            "use_playwright": "use_playwright",
         }
         for field, config_key in field_map.items():
-            value = user_config.get(config_key)
-            if field == "use_playwright":
-                value = _coerce_bool(value)
-            else:
-                value = _clean_string(value)
+            value = _clean_string(user_config.get(config_key))
             if value is not None and loaded.get(field) is None:
                 loaded[field] = value
                 sources[field] = "user_config"
@@ -259,14 +231,9 @@ class RuntimeConfigStore:
             "api_key": "LLM_API_KEY",
             "api_url": "LLM_API_URL",
             "model": "LLM_MODEL",
-            "use_playwright": "USE_PLAYWRIGHT",
         }
         for field, env_name in env_map.items():
-            value: Any
-            if field == "use_playwright":
-                value = _coerce_bool(os.environ.get(env_name))
-            else:
-                value = _clean_string(os.environ.get(env_name))
+            value = _clean_string(os.environ.get(env_name))
             if value is not None:
                 loaded[field] = value
                 sources[field] = f"env:{env_name}"
@@ -286,9 +253,8 @@ def save_llm_runtime_config(
     api_key: str | None,
     api_url: str | None,
     model: str | None,
-    use_playwright: bool | None,
 ) -> None:
-    RuntimeConfigStore().save(api_key, api_url, model, use_playwright)
+    RuntimeConfigStore().save(api_key, api_url, model)
 
 
 def update_llm_runtime_config(**fields: Any) -> None:

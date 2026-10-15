@@ -13,18 +13,21 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 
 from config.paths import workspace_data_dir
-from utils.tui import ACCENT, AMBER
+from utils.theme import current_theme
 
 NOTES_FILENAME = "notes.md"
 
-NOTES_STYLE = Style.from_dict(
-    {
-        "frame.border": ACCENT,
-        "frame.label": f"bold {ACCENT}",
-        "hint": "#6e7681",
-        "hint.key": f"bold {AMBER}",
-    }
-)
+
+def _notes_style() -> Style:
+    theme = current_theme()
+    return Style.from_dict(
+        {
+            "frame.border": theme.accent,
+            "frame.label": f"bold {theme.accent}",
+            "hint": theme.faint,
+            "hint.key": f"bold {theme.warning}",
+        }
+    )
 
 
 def notes_path(workspace: Path) -> Path:
@@ -76,7 +79,7 @@ def edit_notes(workspace: Path) -> bool | None:
     app: Application[bool] = Application(
         layout=Layout(HSplit([Frame(editor, title="Notes"), Window(hint, height=1)]), focused_element=editor),
         key_bindings=bindings,
-        style=NOTES_STYLE,
+        style=_notes_style(),
         full_screen=True,
         mouse_support=True,
     )

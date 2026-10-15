@@ -57,7 +57,3 @@ def check_internet_connectivity():
 def check_memory():
     #NOTE Placeholder for memory check, can be expanded to check actual memory usage or limits.
     return True
-
-def check_rag():
-    #NOTE Placeholder for RAG check, can be expanded to check actual RAG system status.
-    return True

@@ -8,9 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from rich import box
-from rich.console import Console, Group
+from rich.console import Group, RenderableType
 from rich.logging import RichHandler
-from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -21,7 +20,6 @@ from rich.text import Text
 from config.settings import ASSISTANT_SETTINGS
 from core.llm import generate_response
 from core.coding_workflow import run_coding_workflow
-from tools.research.pipeline import research_query
 from skills.loader import Skill, discover_skills, match_skill_trigger
 from skills.manager import list_skills as format_skill_list, create_skill, remove_skill
 from config.runtime_config import (
@@ -32,17 +30,16 @@ from config.runtime_config import (
     save_llm_runtime_config,
 )
 from utils.system_check import check_llm_api
-from rag_service.client import RagServiceClient
-from rag_service.config import load_config as load_rag_service_config
-from rag_service.models import RagError
-from rag_service.terminal import resolve_single_mention
 from utils.start_animation import render_startup_intro
 from tools.file_ops import set_project_root
+from tools.registry import research_query, tools_for
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.filters import has_completions
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import FileHistory
+from utils.code_render import CodeMarkdown, DiffView, diff_rows, lexer_for, parse_unified_diff
+from utils.theme import make_console, syntax_theme
 from utils.commands import BUILTIN_COMMANDS, EXIT_COMMANDS, parse_command
 from utils.completer import WorkspaceFileCompleter
 from utils.stream_render import LiveReply
@@ -55,6 +52,8 @@ from utils.tui import (
     make_prompt_message,
     random_tip,
     summarize_tool_counts,
+    theme_preview,
+    theme_swatch,
     welcome_header,
 )
 
@@ -74,16 +73,16 @@ logging.basicConfig(
 )
 
 # Silence verbose third-party loggers
-for logger_name in ["urllib3", "httpx", "requests", "playwright", "filelock"]:
+for logger_name in ["urllib3", "httpx", "requests", "filelock"]:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 logger = logging.getLogger("rich")
-console = Console()
+console = make_console()
 _last_state_key: tuple[str, str | None] | None = None
 _active_status = None
 
 
-def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
+def app_panel(renderable, *, title: str, border_style: str = "accent") -> Panel:
     return Panel(
         renderable,
         title=f" {title} ",
@@ -128,7 +127,7 @@ def print_goodbye() -> None:
 
     usage = SESSION.usage
     summary = f"  {usage.total_tokens:,} tokens · {usage.tool_calls} tool calls this session" if usage.requests else ""
-    console.print(Text.assemble(("\n● ", "#5fd7ff"), ("Goodbye.", "bold"), (summary, "dim")))
+    console.print(Text.assemble(("\n● ", "accent"), ("Goodbye.", "bold"), (summary, "dim")))
 
 
 def set_state(state: str, detail: str | None = None) -> None:
@@ -138,26 +137,27 @@ def set_state(state: str, detail: str | None = None) -> None:
         return
     _last_state_key = key
 
-    message = f"[#e3b341]✻[/] [bold]{escape(state)}[/bold]"
+    message = f"[warning]✻[/] [bold]{escape(state)}[/bold]"
     if detail:
         message += f" [dim]{escape(detail)}[/dim]"
     console.print(message)
 
 
 def print_chat_message(speaker: str, message: str, *, style: str, markdown: bool = False) -> None:
+    # Callers pass a plain colour word; the active theme decides the actual colour.
+    theme_style = {"red": "danger", "green": "success", "yellow": "warning"}.get(style, "accent")
     if speaker == "You":
         text = Text()
-        text.append(f"{speaker} ", style=f"bold {style}")
+        text.append(f"{speaker} ", style=f"{theme_style}.bold")
         text.append("> ", style="dim")
         text.append(message)
         console.print(text)
         return
 
-    bullet_style = {"red": "#ff6b6b", "green": "#3fb950"}.get(style, "#5fd7ff")
-    body = Markdown(message) if markdown else Text(message)
+    body = CodeMarkdown(message) if markdown else Text(message)
     if speaker != "Helium":
-        body = Group(Text(speaker, style=f"bold {bullet_style}"), body)
-    console.print(assistant_block(body, bullet_style=bullet_style))
+        body = Group(Text(speaker, style=f"{theme_style}.bold"), body)
+    console.print(assistant_block(body, bullet_style=theme_style))
     console.print()
 
 
@@ -198,13 +198,13 @@ def print_sources(sources: list[dict[str, str]]) -> None:
         return
 
     text = Text("   sources ", style="dim")
-    text.append(f"{len(sources)}", style="cyan")
+    text.append(f"{len(sources)}", style="accent")
     console.print(text)
     for index, source in enumerate(sources, start=1):
         line = Text(f"   [{index}] ", style="dim")
         line.append(source["title"], style="dim")
         line.append(" - ", style="dim")
-        line.append(source["url"], style="cyan")
+        line.append(source["url"], style="accent")
         console.print(line)
 
 def smart_join(current: str, chunk: str) -> str:
@@ -266,36 +266,37 @@ def _format_confirm_args(tool_name: str, args: dict) -> list:
     renderables = []
 
     # ── file content tools ─────────────────────────────────────
-    if tool_name in ("write_file", "create_file") and "content" in args:
+    if tool_name in ("write_file", "create_file", "append_file") and "content" in args:
         path = args.get("path") or args.get("filename", "file")
-        ext = Path(path).suffix.lstrip(".")
-        lang = ext if ext else "text"
-        renderables.append(Text(f"path: {path}", style="dim"))
-        renderables.append(Syntax(args["content"], lang, theme="monokai",
-                                  line_numbers=True, word_wrap=True))
-
-    elif tool_name == "append_file" and "content" in args:
-        path = args.get("path", "file")
-        renderables.append(Text(f"path: {path}  (append)", style="dim"))
-        renderables.append(Syntax(args["content"], Path(path).suffix.lstrip(".") or "text",
-                                  theme="monokai", line_numbers=True, word_wrap=True))
+        note = "  (append)" if tool_name == "append_file" else ""
+        renderables.append(Text(f"path: {path}{note}", style="dim"))
+        renderables.append(Syntax(args["content"], lexer_for(path, args["content"]), theme=syntax_theme(),
+                                  background_color="default", line_numbers=True, word_wrap=True))
 
     elif tool_name == "replace_text" and "old" in args and "new" in args:
         path = args.get("path", "file")
         renderables.append(Text(f"path: {path}", style="dim"))
-        renderables.append(Text("─ old ─", style="bold red"))
-        renderables.append(Syntax(args["old"], "text", theme="monokai", word_wrap=True))
-        renderables.append(Text("─ new ─", style="bold green"))
-        renderables.append(Syntax(args["new"], "text", theme="monokai", word_wrap=True))
+        renderables.append(DiffView(diff_rows(args["old"], args["new"], context=1000), path, line_numbers=False))
+
+    elif tool_name == "edit_file" and isinstance(args.get("edits"), list):
+        path = args.get("path", "file")
+        renderables.append(Text(f"path: {path}", style="dim"))
+        for number, edit in enumerate(args["edits"], 1):
+            if not isinstance(edit, dict):
+                continue
+            label = f"edit {number} of {len(args['edits'])}" + ("  (replace all)" if edit.get("replace_all") else "")
+            renderables.append(Text(label, style="dim italic"))
+            rows = diff_rows(str(edit.get("old", "")), str(edit.get("new", "")), context=1000)
+            renderables.append(DiffView(rows, path, line_numbers=False))
 
     elif tool_name == "patch_file" and "patch" in args:
         path = args.get("path", "file")
         renderables.append(Text(f"path: {path}", style="dim"))
-        renderables.append(Syntax(args["patch"], "diff", theme="monokai", word_wrap=True))
+        renderables.append(DiffView(parse_unified_diff(args["patch"]), path))
 
     # ── bash ───────────────────────────────────────────────────
     elif tool_name == "execute_bash" and "command" in args:
-        renderables.append(Syntax(args["command"], "bash", theme="monokai", word_wrap=True))
+        renderables.append(Syntax(args["command"], "bash", theme=syntax_theme(), background_color="default", word_wrap=True))
 
     # ── anything else — clean key: value ───────────────────────
     else:
@@ -339,9 +340,9 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
         header.append("Tool: ", style="dim")
         header.append(tool_name, style="bold")
         header.append("   Permission: ", style="dim")
-        header.append(permission, style="yellow")
+        header.append(permission, style="warning")
         body = Group(header, *_format_confirm_args(tool_name, args))
-        console.print(app_panel(body, title="Confirm Tool", border_style="yellow"))
+        console.print(app_panel(body, title="Confirm Tool", border_style="warning"))
         answer = Prompt.ask("Allow tool? (a = always this session)", choices=["y", "n", "a"], default="n")
     finally:
         if _active_status is not None:
@@ -390,7 +391,7 @@ Helium is a local AI assistant for everyday questions, deep research, file-aware
 ## Commands
 
 {command_lines}
-- `@path/to/file <question>` - Attach one local file for RAG-backed answers.
+- `@path/to/file <question>` - Point Helium at a file; it reads the file to answer.
 - `quit`, `exit`, or `stop` - Also end the session (same as `/exit`).
 {skill_lines}
 ## What You Can Ask
@@ -463,8 +464,8 @@ def format_code_workflow_report(result) -> str:
 
     if getattr(result, "stop_reason", "") == "max_turns":
         sections.append(
-            "\n[bold red]Warning: The coding workflow reached the maximum turn limit and had to stop. "
-            "The task might be incomplete.[/bold red]"
+            "\n[danger.bold]Warning: The coding workflow reached the maximum turn limit and had to stop. "
+            "The task might be incomplete.[/danger.bold]"
         )
 
     return "\n\n".join(sections)
@@ -553,7 +554,7 @@ def handle_deep_research_command(user_text: str) -> bool:
 
     set_state("Deep Research")
     with _Rendering(stream_text=False) as live:
-        live.update("[#5fd7ff]Planning searches and collecting sources…[/]")
+        live.update("[accent]Planning searches and collecting sources…[/]")
         result = research_query(task, max_sources=8)
     print_chat_message("Helium", result, style="cyan", markdown=True)
     _remember_code_turn(f"/deep-research {task}", result)
@@ -642,7 +643,7 @@ def handle_usage_command(user_text: str) -> bool:
     usage = SESSION.usage
     table = Table(box=box.SIMPLE, show_header=False)
     table.add_column("Metric", style="dim")
-    table.add_column("Value", style="cyan", justify="right")
+    table.add_column("Value", style="accent", justify="right")
     table.add_row("Requests", str(usage.requests))
     table.add_row("Prompt tokens", f"{usage.prompt_tokens:,}")
     table.add_row("Completion tokens", f"{usage.completion_tokens:,}")
@@ -749,7 +750,91 @@ def handle_notes_command(user_text: str, workspace: Path) -> bool:
     return True
 
 
+def _theme_list() -> RenderableType:
+    from utils.theme import BUILTIN_THEMES, current_theme, load_user_themes, themes_dir
+
+    user, errors = load_user_themes()
+    active = current_theme().name
+    table = Table(box=None, show_header=False, padding=(0, 1))
+    table.add_column(width=1)
+    table.add_column(style="bold", no_wrap=True)
+    table.add_column(no_wrap=True)
+    table.add_column(style="muted")
+    for theme in {**BUILTIN_THEMES, **user}.values():
+        tags = [tag for tag, on in (("light", not theme.dark), ("custom", theme.source is not None)) if on]
+        description = theme.description + (f"  ({', '.join(tags)})" if tags else "")
+        table.add_row(Text("●", style="accent") if theme.name == active else Text(""), theme.name, theme_swatch(theme), description)
+    parts: list[RenderableType] = [table]
+    for name, error in errors.items():
+        parts.append(Text(f"  ✗ {name}.toml: {error}", style="danger"))
+    parts.append(Text(""))
+    parts.append(Text.from_markup(
+        "  [accent]/theme[/] browse with live previews   ·   [accent]/theme <name>[/] switch and save   ·   [accent]/theme preview <name>[/] try without switching\n"
+        "  [accent]/theme create <name> [from <base>][/] start your own   ·   "
+        f"your themes live in [muted]{themes_dir()}[/]"
+    ))
+    return app_panel(Group(*parts), title="Themes")
+
+
+def _interactive_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def handle_theme_command(user_text: str) -> bool:
+    args = parse_command(user_text, "/theme")
+    if args is None:
+        return False
+    from utils.theme import ThemeError, apply_theme, create_theme_file, current_theme, find_theme, set_theme
+
+    parts = args.split()
+    try:
+        if not parts and _interactive_terminal():
+            from utils.theme_picker import pick_theme
+
+            before = current_theme().name
+            theme = pick_theme()
+            if theme is None:
+                console.print(Text(f"  Kept {before}.", style="dim"))
+            else:
+                console.print(Text.assemble(("  Theme set to ", "dim"), (theme.name, "accent.bold"), (" and saved for future sessions.", "dim")))
+        elif not parts or parts == ["list"]:
+            console.print(_theme_list())
+        elif parts[0] == "create":
+            if len(parts) not in (2, 4) or (len(parts) == 4 and parts[2] != "from"):
+                print_chat_message("Helium", "Usage: `/theme create <name> [from <base>]`", style="cyan", markdown=True)
+                return True
+            path = create_theme_file(parts[1], parts[3] if len(parts) == 4 else current_theme().name)
+            print_chat_message(
+                "Helium",
+                f"Created `{path}` with every colour filled in. Edit it, save, then run `/theme {path.stem}` "
+                "(run it again after each edit to reload).",
+                style="cyan",
+                markdown=True,
+            )
+        elif parts[0] == "preview":
+            if len(parts) != 2:
+                print_chat_message("Helium", "Usage: `/theme preview <name>`", style="cyan", markdown=True)
+                return True
+            previous, theme = current_theme(), find_theme(parts[1])
+            apply_theme(theme)
+            try:
+                console.print(app_panel(theme_preview(), title=f"Preview: {theme.name}"))
+            finally:
+                apply_theme(previous)
+            console.print(Text(f"  Still using {previous.name}. Run /theme {theme.name} to switch.", style="dim"))
+        elif len(parts) == 1:
+            theme = set_theme(parts[0])
+            console.print(app_panel(theme_preview(), title=f"Theme: {theme.name}"))
+            console.print(Text(f"  Switched to {theme.name} and saved it for future sessions.", style="dim"))
+        else:
+            print_chat_message("Helium", "Usage: `/theme [name | preview <name> | create <name> [from <base>]]`", style="cyan", markdown=True)
+    except ThemeError as exc:
+        print_chat_message("Error", str(exc), style="red")
+    return True
+
+
 SESSION_COMMAND_HANDLERS = (
+    handle_theme_command,
     handle_clear_command,
     handle_usage_command,
     handle_model_command,
@@ -782,7 +867,7 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
             user_prompt,
             history=conversation_history,
             confirm_tool=confirm_tool,
-            tool_names=skill.allowed_tools or None,
+            tool_names=skill.allowed_tools or tools_for("chat"),
             execute_tool_call=run_tool,
             on_event=live.handle_event,
         )
@@ -805,44 +890,21 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
     )
 
 
-def prepare_rag_prompt(user_text: str) -> str:
-    config = load_rag_service_config()
-    if not config.enabled or "@" not in user_text:
-        return user_text
+def ensure_llm_runtime_config(force_setup: bool = False) -> bool:
+    """Make sure LLM settings exist, running the setup wizard when they don't.
 
-    mention = resolve_single_mention(user_text, config)
-    if mention is None:
-        return user_text
-
-    set_state("Attachment", "extracting -> indexing -> retrieving")
-    client = RagServiceClient(config)
-    evidence = client.evidence_for_path(
-        mention.file_path,
-        mention.question,
-        debug=config.rag_debug,
-    )
-    citations = evidence.get("citations") or []
-    detail = f"{mention.file_path.name}"
-    if citations:
-        detail += f" / {len(citations)} citations"
-    set_state("Attachment ready", detail)
-    return str(evidence["prompt"])
-
-
-def ensure_llm_runtime_config() -> bool:
+    Complete saved settings are trusted without a test request: that would be a paid
+    completion on every launch. A bad key shows up on the first real request instead,
+    and `helium --setup` reruns the wizard.
+    """
     runtime_config = load_llm_runtime_config()
-    needs_setup = not runtime_config.is_complete
-    if not needs_setup and not check_llm_api(runtime_config):
-        console.print("\n[yellow]Stored LLM configuration failed to connect. You may need to update your settings.[/yellow]")
-        needs_setup = True
-
-    if not needs_setup:
+    if runtime_config.is_complete and not force_setup:
         return True
 
     legacy_values = parse_legacy_env_file()
     if legacy_values and not runtime_config.is_complete:
         import_choice = Prompt.ask(
-            "[bold green]Import existing ~/.helium.env into secure storage?[/bold green]",
+            "[success.bold]Import existing ~/.helium.env into secure storage?[/success.bold]",
             choices=["yes", "no"],
             default="yes",
         )
@@ -850,27 +912,27 @@ def ensure_llm_runtime_config() -> bool:
             try:
                 imported = import_legacy_runtime_config()
                 console.print(
-                    "[yellow]Imported legacy settings. ~/.helium.env may still contain secrets and was left untouched.[/yellow]"
+                    "[warning]Imported legacy settings. ~/.helium.env may still contain secrets and was left untouched.[/warning]"
                 )
                 if imported.is_complete and check_llm_api(imported):
                     return True
             except RuntimeConfigError as exc:
-                console.print(f"[bold red]{exc}[/bold red]")
+                console.print(f"[danger.bold]{exc}[/danger.bold]")
 
     console.print(app_panel(
-        "[bold cyan]Welcome to Helium Agent![/bold cyan]\n\n"
+        "[accent.bold]Welcome to Helium Agent![/accent.bold]\n\n"
         "Some required LLM settings are missing or unable to connect.\n"
         "All settings, including the API key, are saved to your user Helium config file\n"
         "with secure owner-only permissions.",
         title="Setup Wizard",
-        border_style="cyan",
+        border_style="accent",
     ))
 
     from config.providers import PROVIDERS, normalize_chat_url, provider_for_url
 
     current_provider = provider_for_url(runtime_config.api_url)
     provider_name = Prompt.ask(
-        "\n[bold green]1. LLM provider[/bold green]",
+        "\n[success.bold]1. LLM provider[/success.bold]",
         choices=[*PROVIDERS, "custom"],
         default=current_provider.name if current_provider else ("custom" if runtime_config.api_url else "openrouter"),
     ).strip()
@@ -880,30 +942,24 @@ def ensure_llm_runtime_config() -> bool:
 
     same_provider = provider is not None and provider == current_provider
     entered_key = Prompt.ask(
-        f"[bold green]2. Enter your {provider_name if provider else 'LLM'} API key[/bold green]",
+        f"[success.bold]2. Enter your {provider_name if provider else 'LLM'} API key[/success.bold]",
         default=(runtime_config.api_key or "") if same_provider or provider is None else "",
         password=True,
     ).strip()
     if not entered_key:
-        console.print("[yellow]Key setup skipped. Agent starting with active environment values.[/yellow]\n")
+        console.print("[warning]Key setup skipped. Agent starting with active environment values.[/warning]\n")
         return False
 
     default_url = provider.api_url if provider else (runtime_config.api_url or "")
     entered_url = Prompt.ask(
-        "[bold green]3. API URL (a base URL like https://api.example.com/v1 is fine)[/bold green]",
+        "[success.bold]3. API URL (a base URL like https://api.example.com/v1 is fine)[/success.bold]",
         default=default_url,
     ).strip()
     entered_url = normalize_chat_url(entered_url) or entered_url
     default_model = (runtime_config.model if same_provider else None) or (provider.default_model if provider else runtime_config.model) or ""
     entered_model = Prompt.ask(
-        "[bold green]4. Default model[/bold green]",
+        "[success.bold]4. Default model[/success.bold]",
         default=default_model,
-    ).strip()
-    use_playwright_default = "true" if runtime_config.use_playwright is not False else "false"
-    use_playwright = Prompt.ask(
-        "[bold green]5. Enable Playwright browser automation?[/bold green]",
-        choices=["true", "false"],
-        default=use_playwright_default,
     ).strip()
 
     try:
@@ -911,12 +967,11 @@ def ensure_llm_runtime_config() -> bool:
             api_key=entered_key,
             api_url=entered_url,
             model=entered_model,
-            use_playwright=use_playwright == "true",
         )
-        console.print("\n[green]LLM API key saved to the user config file.[/green]\n")
+        console.print("\n[success]LLM API key saved to the user config file.[/success]\n")
         return True
     except RuntimeConfigError as exc:
-        console.print(f"[bold red]{exc}[/bold red]\n")
+        console.print(f"[danger.bold]{exc}[/danger.bold]\n")
         return False
 
 
@@ -934,24 +989,27 @@ def _prompt_key_bindings() -> KeyBindings:
     return bindings
 
 
-def main(target_path: str = ".", nuclear: bool = False):
+def main(target_path: str = ".", nuclear: bool = False, setup: bool = False):
     workspace = Path(target_path).resolve()
     os.chdir(workspace)
     set_project_root(workspace)
 
     if nuclear:
         ASSISTANT_SETTINGS["confirm_risky_tools"] = False
-        warning_body = Text("Nuclear mode active. The agent will execute all risky tools without confirmation.", style="bold red")
-        console.print(app_panel(warning_body, title="WARNING", border_style="red"))
+        warning_body = Text("Nuclear mode active. The agent will execute all risky tools without confirmation.", style="danger.bold")
+        console.print(app_panel(warning_body, title="WARNING", border_style="danger"))
 
-    ensure_llm_runtime_config()
+    from utils.theme import load_saved_theme
+    theme_warning = load_saved_theme()
+
+    ensure_llm_runtime_config(force_setup=setup)
 
     from tools.memory_ops import get_session_summary, initialize_session, legacy_global_db, shutdown_session
     initialize_session(workspace=workspace)
     atexit.register(shutdown_session)
     from tools.edit_journal import JOURNAL
     atexit.register(JOURNAL.clear)
-    notes: list[str] = []
+    notes: list[str] = [theme_warning] if theme_warning else []
     notes.append("Picked up where the last session in this folder left off" if get_session_summary() else "New memory for this folder")
     legacy_db = legacy_global_db()
     if legacy_db is not None:
@@ -1058,27 +1116,19 @@ def main(target_path: str = ".", nuclear: bool = False):
                 if tool_name == "search_web":
                     sources.extend(extract_web_sources(tool_result))
 
-            try:
-                llm_prompt = prepare_rag_prompt(user_text)
-            except RagError as exc:
-                set_state("Attachment error")
-                print_chat_message("Error", exc.message, style="red")
-                continue
-
             rendering = _Rendering()
             with rendering as live:
                 def set_state_spinner(state: str):
                     if state.startswith("Using "):
-                        live.update(f"[#e3b341]Running {escape(state[6:])}…[/]")
+                        live.update(f"[warning]Running {escape(state[6:])}…[/]")
                     elif state == "Responding":
-                        live.update("[#3fb950]Responding…[/]")
+                        live.update("[success]Responding…[/]")
                     else:
-                        live.update("[#5fd7ff]Thinking…[/]")
+                        live.update("[accent]Thinking…[/]")
 
                 reply_list = list(
                     generate_response(
-                        llm_prompt,
-                        history_prompt=user_text,
+                        user_text,
                         confirm_tool=confirm_tool,
                         on_state=set_state_spinner,
                         on_metrics=metrics.update,
@@ -1098,22 +1148,26 @@ def main(target_path: str = ".", nuclear: bool = False):
             
         except KeyboardInterrupt:
             # Ctrl+C during a turn cancels that turn, not the whole session.
-            console.print(Text("\n  ✻ Interrupted. What should Helium do instead?", style="#e3b341"))
+            console.print(Text("\n  ✻ Interrupted. What should Helium do instead?", style="warning"))
         except EOFError:
             print_goodbye()
             break
         except Exception as e:
             set_state("Error")
-            print_chat_message("Error", str(e), style="red")
+            message = str(e)
+            if getattr(e, "status_code", None) in (401, 403):
+                message += "\n\nThe API key was rejected. Run `helium --setup` to update your LLM settings."
+            print_chat_message("Error", message, style="red")
 
 
 def cli_entrypoint():
     parser = argparse.ArgumentParser(description="Helium Agent")
     parser.add_argument("path", type=str, nargs="?", default=".", help="Target workspace path")
     parser.add_argument("--nuclear", action="store_true", help="Bypass all risky tool confirmations (run without asking permission)")
+    parser.add_argument("--setup", action="store_true", help="Rerun the LLM setup wizard (provider, API key, URL, model)")
     args = parser.parse_args()
-    
-    main(target_path=args.path, nuclear=args.nuclear)
+
+    main(target_path=args.path, nuclear=args.nuclear, setup=args.setup)
 
 
 if __name__ == "__main__":
