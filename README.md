@@ -17,7 +17,7 @@ Helium is still developing and more features are added as you read this. I would
 
 - **Answer everyday questions:** Just like any other agent it can repsond to any mundane queries you might have. It won't judge you.
 - **Tool calling:** Helium uses native OpenAI-compatible tool calling (several tools per turn, in parallel when they are read-only), and falls back to a text protocol for models or servers that don't support tools.
-- **Coding**: `/code` runs an agentic loop that explores the project, plans, edits files with precise multi-edits, runs your tests, and reports what changed. `/undo` reverts its last file change.
+- **Coding**: Coding is what Helium does by default. Describe a task and it explores the project, plans, edits files with precise multi-edits, runs your tests, and reports what changed. `/undo` reverts its last file change.
 - **Project instructions:** Put a `HELIUM.md` in your project (or let `/init` write one) and Helium follows it in every conversation.
 - **Deep Research:** For queries that include an `in-depth` knowledge and information retrieval Helium will take help of its research tool to provide with most accurate repsonse with proper citations.
 - **Web Search:** It searches with DuckDuckGo and reads the pages it finds as plain HTML. No browser is needed, so pages that only render with JavaScript may return little text.
@@ -60,7 +60,6 @@ For more commands type `/help` in the chat.
 | Command | What it does |
 | --- | --- |
 | `/help` | Show the help guide. |
-| `/code <task>` | Agentic coding: explore, plan, edit, verify, and report changes. |
 | `/deep-research <task>` | Multi-source research report with citations. |
 | `/init` | Inspect the project and write a `HELIUM.md` with project instructions. |
 | `/undo` | Revert the last file change Helium made (shell-command changes are not covered). |
@@ -104,6 +103,19 @@ comment = "italic #6272a4"
 `HELIUM_THEME=<name>` overrides the saved choice for one run. Pick a theme that matches your terminal's background; Helium doesn't repaint the background itself.
 
 When Helium asks to run a risky tool, answer `y`, `n`, or `a` to allow that tool (or that exact shell command) for the rest of the session. `helium . --nuclear` skips all confirmations.
+
+### Non-interactive mode
+
+`helium -p "<task>"` runs one task without the interactive UI, prints the answer, and exits, which is handy for scripts and CI:
+
+```bash
+helium . -p "explain what main.py does"                    # read-only: risky tools are denied
+helium . -p "fix the failing parser test" --accept-edits   # allow file edits
+helium . -p "upgrade the lint config and run it" --yes     # allow everything, shell included
+helium . -p "add type hints to utils/" --yes --json        # JSON: result, stop reason, tokens, tools
+```
+
+Nothing is asked during a `-p` run, so tools that need approval are denied unless `--accept-edits` or `--yes` allows them. Progress and diffs go to stderr (`--verbose` adds a line per tool call) and only the answer goes to stdout. `--transcript FILE` saves every message, and `--model` and `--max-turns` override the config for that run. The exit code is 0 when Helium finishes, 2 when it hits the turn limit, and 1 on an error.
 
 ### Project instructions (HELIUM.md)
 
@@ -257,6 +269,13 @@ uv run pytest tests -q --ignore=tests/test_eval_graders.py --ignore=tests/test_e
 ```
 
 The tests never call a real LLM endpoint and keep memory and history in a temporary directory.
+
+The coding benchmark runs Helium on 20 tasks in throwaway repos and grades them with hidden tests. It calls your configured model, so it is not part of the test suite:
+
+```bash
+uv run python -m evals.bench.run            # see evals/bench/README.md for options
+uv run python -m evals.bench.run --check    # validate the tasks themselves, no model needed
+```
 
 Opt-in live checks against the real DeepSeek API (a few small `deepseek-flash` requests, key read from `DEEPSEEK_API_KEY` or `.env`):
 

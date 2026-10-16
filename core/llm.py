@@ -43,7 +43,7 @@ console = make_console()
 
 conversation_history = []
 MAX_HISTORY = 10
-MAX_AGENTIC_TURNS = int(AGENT_SETTINGS.get("chat_max_turns", 12))
+MAX_AGENTIC_TURNS = int(AGENT_SETTINGS.get("max_turns", 40))
 PARALLEL_TOOL_WORKERS = 4
 # Marked safe, but they run whole subagent loops that may ask the user for
 # confirmation, so they must never run concurrently with other calls.
@@ -512,7 +512,7 @@ def stream_openrouter_response(payload: dict, *, api_url: str | None = None, api
 def build_system_prompt(prompt: str, skills: list[Any] | None = None) -> str:
     from core.prompts import build_system_prompt as build_prompt
 
-    return build_prompt("chat", user_prompt=prompt, skills=skills)
+    return build_prompt("main", user_prompt=prompt, skills=skills)
 
 
 def build_messages(prompt: str) -> list[dict]:
@@ -593,7 +593,7 @@ def run_agent(
     model: ChatModel | None = None,
     ask_model: Callable[[list[dict[str, Any]]], Any] | None = None,
 ) -> AgenticLoopResult:
-    """Shared entry point for chat, /code, skills, and subagents."""
+    """Shared entry point for the main agent, skills, and subagents."""
     from core.session import SESSION
 
     if model is None and ask_model is None:
@@ -685,7 +685,7 @@ def generate_response(
             prompt,
             history=conversation_history,
             confirm_tool=confirm_tool,
-            tool_names=tools_for("chat"),
+            tool_names=tools_for("main"),
             on_event=handle_event,
         )
         reply = loop_result.final_answer
@@ -714,6 +714,7 @@ def generate_response(
             "prompt_tokens": int(loop_result.usage.get("prompt_tokens", 0)),
             "tps": tps,
             "tools_used": tools_str,
+            "stop_reason": loop_result.stop_reason,
         }
 
         if on_metrics:

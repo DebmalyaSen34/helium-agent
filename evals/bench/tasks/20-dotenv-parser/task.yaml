@@ -1,0 +1,25 @@
+id: 20-dotenv-parser
+category: bugfix
+difficulty: hard
+prompt: |
+  Our .env parser chokes on real files. Quoted values keep their quotes, inline
+  comments end up inside values, and lines starting with `export ` are skipped.
+  This file:
+
+      # database
+      export DB_HOST=localhost
+      DB_PORT = 5432
+      DB_PASS="p#ss word"   # quoted, so the # is part of the value
+      GREETING='hello "world"'
+      EMPTY=
+      URL=https://example.com/a#b  # unquoted: the comment starts at " #"
+      MULTI="line1\nline2"
+
+  must parse to:
+
+      {"DB_HOST": "localhost", "DB_PORT": "5432", "DB_PASS": "p#ss word",
+       "GREETING": 'hello "world"', "EMPTY": "", "URL": "https://example.com/a#b",
+       "MULTI": "line1<newline>line2"}
+
+  where <newline> is a real newline: \n is only expanded inside double quotes, never
+  in single quotes. Lines without "=" should raise ValueError naming the line number.

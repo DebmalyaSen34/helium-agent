@@ -14,7 +14,6 @@ class SlashCommand:
 
 BUILTIN_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/help", "/help", "Show this help guide."),
-    SlashCommand("/code", "/code <task>", "Agentic coding: explore, plan, edit, verify, and report changes."),
     SlashCommand("/deep-research", "/deep-research <task>", "Run the deep research pipeline with multi-source evidence."),
     SlashCommand("/init", "/init", "Inspect the project and write a HELIUM.md with project instructions."),
     SlashCommand("/undo", "/undo", "Revert the last file change Helium made (shell command changes are not covered)."),

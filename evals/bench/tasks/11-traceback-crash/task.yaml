@@ -1,0 +1,12 @@
+id: 11-traceback-crash
+category: debug
+difficulty: medium
+prompt: |
+  A customer hit this crash running the monthly sales report. Please fix it.
+
+  Traceback (most recent call last):
+    File "report.py", line 9, in <module>
+      print(render(summarize(load_orders(sys.argv[1]))))
+    File "/srv/app/sales/summary.py", line 11, in summarize
+      totals[row["region"]] += parse_amount(row["amount"])
+  KeyError: 'EMEA'

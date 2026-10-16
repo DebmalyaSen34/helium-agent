@@ -1,0 +1,7 @@
+id: 13-keyword-only-args
+category: refactor
+difficulty: medium
+prompt: |
+  Change notify.sender.send so retries and timeout are keyword-only with defaults:
+  `def send(message, *, retries=3, timeout=10.0)`. Update every caller in the project
+  so nothing breaks and each caller keeps sending the same values it sends today.

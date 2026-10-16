@@ -31,7 +31,7 @@ _JITTER = (-1, 0, 0, 1)
 
 TIPS = (
     'Try "explain how this project is structured"',
-    'Try "/code add a test for the parser"',
+    'Try "add a test for the parser"',
     'Try "@README.md what does this project do?"',
     'Try "/init" to write a HELIUM.md for this project',
     'Try "/deep-research compare local and cloud coding agents"',

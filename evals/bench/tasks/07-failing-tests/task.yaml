@@ -1,0 +1,7 @@
+id: 07-failing-tests
+category: debug
+difficulty: medium
+protected:
+  - tests/test_stock.py
+prompt: |
+  The test suite is failing. Please get it passing without changing the tests.

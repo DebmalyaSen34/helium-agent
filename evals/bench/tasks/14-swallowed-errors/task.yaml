@@ -1,0 +1,9 @@
+id: 14-swallowed-errors
+category: bugfix
+difficulty: medium
+prompt: |
+  payments.gateway.charge catches every exception and returns None, so checkout
+  thinks failed payments went through. Make charge raise PaymentError (from
+  payments/errors.py) chained from the original exception, and make checkout mark
+  the order "payment_failed", with the error message in order.error, instead of
+  "paid" when that happens. Successful charges should work as before.

@@ -39,8 +39,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "extra_params": {},
     },
     "agent": {
-        "chat_max_turns": 12,
-        "code_max_turns": 40,
+        "max_turns": 40,
         "parallel_safe_tools": True,
     },
     "browser": {
@@ -50,7 +49,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "confirm_risky_tools": True,
         "startup_animation": False,
         "persona": """
-You are Helium, a local AI agent that runs in the user's terminal and works inside their project.
+You are Helium, a coding agent that runs in the user's terminal and works inside their project.
+You also answer everyday questions and research topics on the web.
 
 Core principles:
 - Prioritize factual accuracy over appearing confident. Never fabricate information, sources, APIs, files, memories, or actions.

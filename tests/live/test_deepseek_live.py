@@ -51,12 +51,12 @@ def test_native_tool_call_round_trip(model):
 
 
 def test_history_without_reasoning_is_accepted_with_tools(model):
-    """Turns stored without reasoning_content (e.g. /code reports) must not break tool requests."""
+    """Turns stored without reasoning_content (e.g. /deep-research reports) must not break tool requests."""
     from core.llm import AgenticLoop
 
     history = [
-        {"role": "user", "content": "/code create hello.py"},
-        {"role": "assistant", "content": "Changed files:\n- hello.py"},
+        {"role": "user", "content": "/deep-research local agents"},
+        {"role": "assistant", "content": "Local agents run models on your own hardware."},
     ]
     result = AgenticLoop(
         model=model,

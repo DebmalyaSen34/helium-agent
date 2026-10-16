@@ -12,14 +12,14 @@ def test_workspace_file_completer():
     matches = [c.text for c in completions]
     assert "README.md" in matches
 
-def test_slash_command_completer_suggests_code_and_deep_research():
+def test_slash_command_completer_suggests_builtin_commands():
     completer = WorkspaceFileCompleter()
     doc = Document("/", cursor_position=1)
 
     completions = list(completer.get_completions(doc, None))
     matches = [c.text for c in completions]
 
-    assert "/code" in matches
+    assert "/code" not in matches
     assert "/deep-research" in matches
     assert "/help" in matches
 

@@ -4,7 +4,7 @@ All notable changes to Helium Agent are listed here.
 
 ## [0.2.0] - Unreleased
 
-Helium 0.2 is a rebuild of the agent loop and the terminal UI. It adds native tool calling, a proper coding workflow, DeepSeek support, themes and notes. It is also much lighter than before. Playwright and the RAG service are gone, startup no longer calls the model, and every chat request is smaller.
+Helium 0.2 is a rebuild of the agent loop and the terminal UI. It makes coding Helium's default job and adds native tool calling, DeepSeek support, themes and notes. It is also much lighter than before. Playwright and the RAG service are gone, startup no longer calls the model, and every chat request is smaller.
 
 ### Performance
 
@@ -24,21 +24,23 @@ Measured on an Apple Silicon Mac with no LLM calls. The "Before" column is the f
 
 - **Streaming:** replies no longer re-render from the start on every redraw. Finished Markdown blocks are rendered once and cached, and only the block still being written is redrawn. Before, a long reply took longer to redraw than the gap between redraws, so one CPU core stayed busy and the screen fell behind.
 - **Startup:** Helium no longer sends a test chat request before showing the prompt. Complete saved settings are trusted, and a rejected key shows up on the first real request with a hint to run `helium --setup`.
-- **Smaller requests:** each mode sends only the tools it uses. Chat and `/code` each get 20 tools instead of all 35, and subagents get 16. Alias and rarely used tools (`create_file`, `append_file`, `replace_text`, `patch_file`, `copy_file`, `touch_file`, `stat_file`, `checksum_file`, `diff_text`) are still available to skills that list them. Subagent instructions are only added to the `/code` system prompt.
+- **Smaller requests:** each mode sends only the tools it uses. The main agent gets 26 tools instead of all 35, and subagents get 16. Alias and rarely used tools (`create_file`, `append_file`, `replace_text`, `patch_file`, `copy_file`, `touch_file`, `stat_file`, `checksum_file`, `diff_text`) are still available to skills that list them. Subagent instructions are only added to the main agent's system prompt.
 - **`@` completion:** suggestions are capped at the best 50 matches, with name matches first and then shorter paths. The file list is cached for 30 seconds, but adding or removing something in the top folder still refreshes it straight away. At most 20,000 files are indexed. Suggestions stop once you start typing your question.
 - **Lazy web search:** BeautifulSoup and the search code load on the first web search, not at startup.
 
 ### Added
 
 - **Native tool calling:** uses the OpenAI-compatible `tools` API. Safe tool calls run in parallel, and Helium falls back to a text `<action>` protocol for models or servers that don't support tools. Tool schemas come from function signatures, and arguments are validated.
-- **One agent runner** for chat, `/code`, skills and subagents.
-- **`/code`:** an explore, plan, edit and verify workflow with a project snapshot. It comes with new coding tools:
+- **One agent runner** for the main agent, skills and subagents.
+- **Coding by default:** there is no separate coding command. Every request goes to one agent that explores, plans, edits and verifies, like Claude Code, and can still chat, search the web and remember things. The system prompt carries coding guidelines and a project snapshot (git status and file tree) taken once per session, so it stays identical between turns and local servers can reuse their prompt cache. Follow-ups build on the same conversation. File edits ask for approval unless you switch to "accept edits" with shift+tab. `[agent] max_turns` (default 40) replaces `chat_max_turns` and `code_max_turns`. New coding tools:
   - `edit_file`: atomic edits, several at once.
   - `glob_files`.
   - `search_text`: regex search that honours `.gitignore`.
   - Numbered `read_file` output.
   - `git_status`, `git_diff` and `git_log`.
   - `run_tests`, which detects the project's test runner.
+- **Non-interactive mode:** `helium -p "<task>"` runs one task and exits. Tools that need approval are denied unless `--accept-edits` or `--yes` allows them. `--json` prints the result, stop reason, token usage and tool counts; `--transcript` saves every message. The exit code is 0 when Helium finishes, 2 at the turn limit, and 1 on an error.
+- **Coding benchmark:** `python -m evals.bench.run` runs 20 coding tasks (bug fixes, features, refactors, debugging, performance) in throwaway git repos and grades each with hidden tests. It reports pass rates by category and difficulty, saves each attempt's transcript and diff, and compares against an earlier run with `--compare`. `--check` validates the tasks without a model.
 - **Project instructions:** Helium reads a `HELIUM.md` into every prompt, and `/init` writes or updates it.
 - **Per-workspace memory and prompt history:** stored in the user data directory, one database per project. The last session is summarised into the next one.
 - **Session commands:**

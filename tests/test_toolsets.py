@@ -12,15 +12,20 @@ def test_modes_send_fewer_tools_than_the_full_registry():
         assert len(build_openai_tools(tools_for(mode))) < len(AVAILABLE_TOOLS)
 
 
-def test_only_code_mode_offers_subagents():
-    assert "delegate_task" in tools_for("code")
-    assert "delegate_task" not in tools_for("chat")
+def test_only_the_main_agent_offers_subagents():
+    assert "delegate_task" in tools_for("main")
     assert "delegate_task" not in tools_for("subagent")
 
 
+def test_main_agent_has_coding_and_chat_tools():
+    tools = tools_for("main")
+    for name in ("edit_file", "run_tests", "execute_bash", "search_web", "research_query", "remember_fact"):
+        assert name in tools
+
+
 def test_subagent_guidance_follows_the_toolset():
-    assert "<subagent_workflow>" in build_system_prompt("code", extra="rules")
-    assert "<subagent_workflow>" not in build_system_prompt("chat")
+    assert "<subagent_workflow>" in build_system_prompt("main")
+    assert "<subagent_workflow>" not in build_system_prompt("subagent", persona="You are a helper.")
 
 
 def test_web_search_stack_is_not_imported_at_startup():

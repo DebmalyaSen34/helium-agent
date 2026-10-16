@@ -40,6 +40,65 @@ def load_project_instructions(workspace: Path | None = None) -> str | None:
     return text or None
 
 
+_snapshots: dict[Path, str] = {}
+
+
+def gather_project_snapshot(root: Path, max_entries: int = 150) -> str:
+    """Git status plus a shallow file tree, so the agent starts oriented."""
+    from tools.file_service import IGNORED_DIRS
+    from tools.git_ops import git_status
+
+    entries: list[str] = []
+    try:
+        for child in sorted(root.iterdir()):
+            if child.name in IGNORED_DIRS or child.name.startswith(".") and child.name not in {".github", ".helium"}:
+                continue
+            if child.is_dir():
+                entries.append(f"{child.name}/")
+                for grandchild in sorted(child.iterdir()):
+                    if grandchild.name in IGNORED_DIRS or grandchild.name.startswith("."):
+                        continue
+                    entries.append(f"  {grandchild.name}{'/' if grandchild.is_dir() else ''}")
+                    if len(entries) >= max_entries:
+                        break
+            else:
+                entries.append(child.name)
+            if len(entries) >= max_entries:
+                entries.append("  ...")
+                break
+    except OSError:
+        pass
+
+    return f"Project root: {root}\n\nGit status:\n{git_status()}\n\nFiles (depth 2):\n" + "\n".join(entries)
+
+
+def project_snapshot_section(workspace: Path | None = None) -> str | None:
+    """The snapshot taken the first time it is asked for in this session.
+
+    It is not refreshed per turn, so the system prompt stays byte-identical and
+    servers that cache the prompt prefix (llama.cpp, Ollama) keep reusing it.
+    """
+    if workspace is None:
+        from tools import file_ops
+
+        workspace = file_ops.PROJECT_ROOT
+    workspace = Path(workspace)
+    if workspace not in _snapshots:
+        try:
+            _snapshots[workspace] = gather_project_snapshot(workspace)
+        except Exception:
+            _snapshots[workspace] = ""
+    snapshot = _snapshots[workspace]
+    if not snapshot:
+        return None
+    return (
+        "<project_snapshot>\n"
+        "Taken at the start of this session; it does not update as files change.\n\n"
+        f"{snapshot}\n"
+        "</project_snapshot>"
+    )
+
+
 def project_instructions_section(workspace: Path | None = None) -> str | None:
     text = load_project_instructions(workspace)
     if not text:
@@ -76,6 +135,8 @@ __all__ = [
     "INIT_TASK",
     "INIT_UPDATE_TASK",
     "find_project_instructions",
+    "gather_project_snapshot",
     "load_project_instructions",
     "project_instructions_section",
+    "project_snapshot_section",
 ]

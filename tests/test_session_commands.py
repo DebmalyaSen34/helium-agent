@@ -133,14 +133,13 @@ if __name__ == "__main__":
 
 class InitCommandTests(unittest.TestCase):
     @patch("main.print_chat_message")
-    @patch("main.run_coding_workflow")
-    def test_init_runs_coding_workflow_with_init_task(self, mock_run, mock_print):
+    @patch("main.run_main_turn")
+    def test_init_runs_main_turn_with_init_task(self, mock_run, mock_print):
         import tempfile
         from pathlib import Path
         from core.project_context import INIT_TASK
         from tools import file_ops
 
-        mock_run.return_value = type("R", (), {"final_answer": "Changed files:\n- HELIUM.md\n\nVerification:\n- n/a\n\nRemaining risks:\n- None", "stop_reason": "final"})()
         original = file_ops.PROJECT_ROOT
         with tempfile.TemporaryDirectory() as tmp:
             file_ops.set_project_root(Path(tmp))
@@ -149,9 +148,10 @@ class InitCommandTests(unittest.TestCase):
             finally:
                 file_ops.set_project_root(original)
         self.assertEqual(mock_run.call_args.args[0], INIT_TASK)
+        self.assertEqual(mock_run.call_args.kwargs["history_prompt"], "/init")
 
     @patch("main.print_chat_message")
-    @patch("main.run_coding_workflow")
+    @patch("main.run_main_turn")
     @patch("main.Prompt.ask", return_value="cancel")
     def test_init_cancel_when_file_exists(self, mock_ask, mock_run, mock_print):
         import tempfile

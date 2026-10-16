@@ -65,7 +65,7 @@ def test_project_instructions_loaded_and_injected(tmp_path, monkeypatch):
 
     monkeypatch.setattr(file_ops, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(memory_ops, "get_relevant_memories", lambda q: [])
-    for mode in ("chat", "code", "skill", "subagent"):
+    for mode in ("main", "skill", "subagent"):
         assert "make check" in build_system_prompt(mode, user_prompt="hi")
 
 
@@ -80,6 +80,6 @@ def test_previous_session_injected_into_chat_prompt(tmp_path, monkeypatch):
 
     monkeypatch.setattr(memory_ops, "_startup_context", "Session context:\nUser: we use poetry")
     monkeypatch.setattr(memory_ops, "get_relevant_memories", lambda q: [])
-    prompt = build_system_prompt("chat", user_prompt="hi")
+    prompt = build_system_prompt("main", user_prompt="hi")
     assert "PREVIOUS SESSION" in prompt
     assert "we use poetry" in prompt

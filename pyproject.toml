@@ -42,3 +42,9 @@ config = ["settings.toml"]
 [dependency-groups]
 dev = ["pytest"]
 
+
+[tool.pytest.ini_options]
+# evals/bench/tasks holds benchmark fixtures whose hidden tests fail on purpose.
+testpaths = ["tests"]
+# Lets plain `pytest` import top-level packages such as evals, as `python -m pytest` does.
+pythonpath = ["."]

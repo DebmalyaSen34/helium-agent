@@ -1,0 +1,6 @@
+id: 02-mutable-default
+category: bugfix
+difficulty: easy
+prompt: |
+  When I create two separate TaskLists and add a task to one of them, the task
+  shows up in the other one too. Fix it.

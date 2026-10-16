@@ -19,7 +19,6 @@ from rich.text import Text
 
 from config.settings import ASSISTANT_SETTINGS
 from core.llm import generate_response
-from core.coding_workflow import run_coding_workflow
 from skills.loader import Skill, discover_skills, match_skill_trigger
 from skills.manager import list_skills as format_skill_list, create_skill, remove_skill
 from config.runtime_config import (
@@ -326,9 +325,9 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     if approval_key in SESSION.allow_list:
         return True
     if SESSION.permission_mode == "accept-edits":
-        from core.coding_workflow import CODING_AUTO_APPROVED_TOOLS
+        from tools.registry import EDIT_TOOLS
 
-        if tool_name in CODING_AUTO_APPROVED_TOOLS:
+        if tool_name in EDIT_TOOLS:
             return True
 
     global _active_status
@@ -354,14 +353,6 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     return answer == "y"
 
 
-def parse_code_command(user_text: str) -> str | None:
-    stripped = user_text.strip()
-    if stripped == "/code":
-        return ""
-    if not stripped.startswith("/code "):
-        return None
-    return stripped[len("/code "):].strip()
-
 def parse_deep_research_command(user_text: str) -> str | None:
     stripped = user_text.strip()
     if stripped == "/deep-research":
@@ -386,7 +377,7 @@ def build_help_text(discovered_skills: list[Skill] | None = None) -> str:
 
     return f"""# Helium Help
 
-Helium is a local AI assistant for everyday questions, deep research, file-aware chat, and agentic coding.
+Helium is a coding agent that works in your project. Describe a task in plain words and it explores the code, edits files, runs your tests, and tells you what changed. It also answers everyday questions and does deep research.
 
 ## Commands
 
@@ -396,26 +387,22 @@ Helium is a local AI assistant for everyday questions, deep research, file-aware
 {skill_lines}
 ## What You Can Ask
 
+- Coding: fix bugs, add features and tests, refactor, explain how the project fits together, and run commands.
+- File work: read, create, edit, search, and summarize project files.
 - Everyday chat: ask questions, draft text, summarize ideas, or reason through decisions.
 - Deep research: request cited reports, comparisons, market/policy analysis, or current-event research.
-- Agentic coding: fix bugs, add tests, inspect project architecture, refactor focused code, and run verification.
-- File work: read, create, patch, search, and summarize project files through tools.
 - Web work: search the web, fetch pages, and synthesize evidence with source URLs.
 - Memory: ask Helium to remember preferences or facts; memory persists across sessions.
 
-## Agentic Coding
+## Coding
 
-Use `/code` when you want Helium to work like a coding agent:
+Just say what you want done; no command needed:
 
 ```text
-/code fix the failing parser test and run the focused test file
+fix the failing parser test and run the focused test file
 ```
 
-Helium will inspect relevant files first, make targeted edits, ask before risky shell commands, run verification when useful, and finish with:
-
-- Changed files
-- Verification
-- Remaining risks
+Helium reads the relevant files first, makes targeted edits, runs the smallest useful check, and finishes with a short summary of what changed and how it was verified. Follow-ups build on the same conversation.
 
 ## Deep Research
 
@@ -429,7 +416,7 @@ Helium will plan searches, collect evidence, synthesize findings, and cite sourc
 
 ## Tool safety
 
-Read/search tools can run automatically. Risky actions such as destructive file operations, unsafe shell commands, and opening apps ask for confirmation; answer `a` to allow the same tool (or exact shell command) for the rest of the session. In `/code`, common file edits are auto-approved so coding tasks can move smoothly, while destructive actions still stay guarded. Use `/undo` to revert Helium's last file change.
+Read/search tools can run automatically. Risky actions such as destructive file operations, unsafe shell commands, and opening apps ask for confirmation; answer `a` to allow the same tool (or exact shell command) for the rest of the session. Press shift+tab to switch to "accept edits", which approves file edits without asking while shell commands, deletes, and moves stay guarded. Use `/undo` to revert Helium's last file change.
 
 ## Examples
 
@@ -437,38 +424,9 @@ Read/search tools can run automatically. Risky actions such as destructive file 
 Summarize this project.
 @README.md explain how to run Helium locally
 /deep-research why are local AI agents becoming popular?
-/code add a focused test for /help command parsing
+add a focused test for /help command parsing
 ```
 """
-
-def format_code_workflow_report(result) -> str:
-    answer = str(getattr(result, "final_answer", "")).strip()
-    sections = [answer] if answer else []
-
-    if "Changed files:" not in answer:
-        changed_files = getattr(result, "changed_files", []) or []
-        files_text = "\n".join(f"- {path}" for path in changed_files) if changed_files else "- None recorded"
-        sections.append(f"Changed files:\n{files_text}")
-
-    if "Verification:" not in answer:
-        verification_commands = getattr(result, "verification_commands", []) or []
-        verification_text = (
-            "\n".join(f"- {command}" for command in verification_commands)
-            if verification_commands
-            else "- Not run or not recorded"
-        )
-        sections.append(f"Verification:\n{verification_text}")
-
-    if "Remaining risks:" not in answer:
-        sections.append("Remaining risks:\n- Not reported")
-
-    if getattr(result, "stop_reason", "") == "max_turns":
-        sections.append(
-            "\n[danger.bold]Warning: The coding workflow reached the maximum turn limit and had to stop. "
-            "The task might be incomplete.[/danger.bold]"
-        )
-
-    return "\n\n".join(sections)
 
 class _Rendering:
     """Run a LiveReply and expose it as the active status so confirmations can pause it."""
@@ -488,30 +446,13 @@ class _Rendering:
         self.reply.finish()
 
 
-def handle_code_command(user_text: str, confirm_tool) -> bool:
-    task = parse_code_command(user_text)
-    if task is None:
-        return False
-    if not task:
-        print_chat_message("Helium", "Usage: /code <coding task>", style="cyan")
-        return True
-
-    set_state("Coding Workflow")
-    with _Rendering(stream_text=False) as live:
-        result = run_coding_workflow(task, confirm_tool=confirm_tool, on_event=live.handle_event)
-    report = format_code_workflow_report(result)
-    print_chat_message("Helium", report, style="cyan", markdown=True)
-    _remember_code_turn(f"/code {task}", report)
-    return True
-
-
-def _remember_code_turn(user_text: str, report: str) -> None:
+def _remember_command_turn(user_text: str, reply: str) -> None:
     try:
         from core.llm import remember_turn
 
-        remember_turn(user_text, report)
+        remember_turn(user_text, reply)
     except Exception:
-        logger.debug("Could not record /code turn", exc_info=True)
+        logger.debug("Could not record %s turn", user_text.split()[0], exc_info=True)
 
 
 def handle_init_command(user_text: str, confirm_tool) -> bool:
@@ -537,9 +478,7 @@ def handle_init_command(user_text: str, confirm_tool) -> bool:
             task = INIT_UPDATE_TASK
 
     set_state("Init", "writing HELIUM.md")
-    with _Rendering(stream_text=False) as live:
-        result = run_coding_workflow(task, confirm_tool=confirm_tool, on_event=live.handle_event)
-    print_chat_message("Helium", format_code_workflow_report(result), style="cyan", markdown=True)
+    run_main_turn(task, confirm_tool=confirm_tool, history_prompt="/init")
     if find_project_instructions(file_ops.PROJECT_ROOT) is not None:
         console.print("[dim]:: HELIUM.md will be included in every prompt. Use /undo to revert it.[/dim]")
     return True
@@ -557,7 +496,7 @@ def handle_deep_research_command(user_text: str) -> bool:
         live.update("[accent]Planning searches and collecting sources…[/]")
         result = research_query(task, max_sources=8)
     print_chat_message("Helium", result, style="cyan", markdown=True)
-    _remember_code_turn(f"/deep-research {task}", result)
+    _remember_command_turn(f"/deep-research {task}", result)
     return True
 
 def handle_help_command(user_text: str, discovered_skills: list[Skill] | None = None) -> bool:
@@ -842,6 +781,59 @@ SESSION_COMMAND_HANDLERS = (
 )
 
 
+def run_main_turn(
+    user_text: str,
+    confirm_tool,
+    *,
+    skills: list[Skill] | None = None,
+    history_prompt: str | None = None,
+) -> None:
+    """Run one request through the main agent and render the reply, sources, and metrics."""
+    metrics: dict[str, Any] = {}
+    sources: list[dict[str, str]] = []
+
+    def collect_tool_result(tool_name: str, tool_result: str) -> None:
+        if tool_name == "search_web":
+            sources.extend(extract_web_sources(tool_result))
+
+    rendering = _Rendering()
+    with rendering as live:
+        def set_state_spinner(state: str):
+            if state.startswith("Using "):
+                live.update(f"[warning]Running {escape(state[6:])}…[/]")
+            elif state == "Responding":
+                live.update("[success]Responding…[/]")
+            else:
+                live.update("[accent]Thinking…[/]")
+
+        reply_list = list(
+            generate_response(
+                user_text,
+                confirm_tool=confirm_tool,
+                on_state=set_state_spinner,
+                on_metrics=metrics.update,
+                on_tool_result=collect_tool_result,
+                print_metrics=False,
+                skills=skills,
+                on_event=live.handle_event,
+                history_prompt=history_prompt,
+            )
+        )
+    streamed = rendering.reply.finish()
+
+    if not streamed:
+        stream_reply(reply_list)
+    print_sources(sources)
+    if metrics.get("stop_reason") == "max_turns":
+        console.print(Text(
+            "  Stopped at the tool turn limit, so the task may be incomplete. "
+            "Say \"continue\" to pick it up, or raise [agent] max_turns.",
+            style="warning",
+        ))
+    if metrics:
+        print_metrics(metrics)
+
+
 def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None:
     """Run a skill: its body joins the system prompt and the shared agent loop does the rest."""
     set_state(f"Skill: {skill.name}")
@@ -867,7 +859,7 @@ def invoke_skill(skill: Skill, args: str, confirm_tool, workspace: Path) -> None
             user_prompt,
             history=conversation_history,
             confirm_tool=confirm_tool,
-            tool_names=skill.allowed_tools or tools_for("chat"),
+            tool_names=skill.allowed_tools or tools_for("main"),
             execute_tool_call=run_tool,
             on_event=live.handle_event,
         )
@@ -1105,47 +1097,10 @@ def main(target_path: str = ".", nuclear: bool = False, setup: bool = False):
                 skill, skill_args = skill_match
                 invoke_skill(skill, skill_args, confirm_tool, workspace)
                 continue
-            if handle_code_command(user_text, confirm_tool=confirm_tool):
-                continue
             if handle_deep_research_command(user_text):
                 continue
-            metrics: dict[str, Any] = {}
-            sources: list[dict[str, str]] = []
+            run_main_turn(user_text, confirm_tool=confirm_tool, skills=discovered_skills)
 
-            def collect_tool_result(tool_name: str, tool_result: str) -> None:
-                if tool_name == "search_web":
-                    sources.extend(extract_web_sources(tool_result))
-
-            rendering = _Rendering()
-            with rendering as live:
-                def set_state_spinner(state: str):
-                    if state.startswith("Using "):
-                        live.update(f"[warning]Running {escape(state[6:])}…[/]")
-                    elif state == "Responding":
-                        live.update("[success]Responding…[/]")
-                    else:
-                        live.update("[accent]Thinking…[/]")
-
-                reply_list = list(
-                    generate_response(
-                        user_text,
-                        confirm_tool=confirm_tool,
-                        on_state=set_state_spinner,
-                        on_metrics=metrics.update,
-                        on_tool_result=collect_tool_result,
-                        print_metrics=False,
-                        skills=discovered_skills,
-                        on_event=live.handle_event,
-                    )
-                )
-            streamed = rendering.reply.finish()
-
-            if not streamed:
-                stream_reply(reply_list)
-            print_sources(sources)
-            if metrics:
-                print_metrics(metrics)
-            
         except KeyboardInterrupt:
             # Ctrl+C during a turn cancels that turn, not the whole session.
             console.print(Text("\n  ✻ Interrupted. What should Helium do instead?", style="warning"))
@@ -1165,7 +1120,31 @@ def cli_entrypoint():
     parser.add_argument("path", type=str, nargs="?", default=".", help="Target workspace path")
     parser.add_argument("--nuclear", action="store_true", help="Bypass all risky tool confirmations (run without asking permission)")
     parser.add_argument("--setup", action="store_true", help="Rerun the LLM setup wizard (provider, API key, URL, model)")
+    headless = parser.add_argument_group("non-interactive mode")
+    headless.add_argument("-p", "--print", dest="task", metavar="TASK", help="Run one task without the interactive UI, print the result, and exit")
+    headless.add_argument("--json", action="store_true", help="With -p: print a JSON object with the result, stop reason, and usage")
+    headless.add_argument("--accept-edits", action="store_true", help="With -p: allow file edits (other risky tools are denied)")
+    headless.add_argument("--yes", action="store_true", help="With -p: allow every tool, including shell commands and deletes")
+    headless.add_argument("--max-turns", type=int, help="With -p: tool turn limit for this run")
+    headless.add_argument("--model", help="With -p: model to use for this run")
+    headless.add_argument("--transcript", type=Path, metavar="FILE", help="With -p: write the full message transcript as JSON")
+    headless.add_argument("--verbose", action="store_true", help="With -p: print each tool call to stderr")
     args = parser.parse_args()
+
+    if args.task is not None:
+        from core.headless import headless_main
+
+        permission_mode = "all" if (args.yes or args.nuclear) else "accept-edits" if args.accept_edits else "deny"
+        sys.exit(headless_main(
+            Path(args.path),
+            args.task,
+            permission_mode=permission_mode,
+            output_json=args.json,
+            max_turns=args.max_turns,
+            model_name=args.model,
+            transcript_path=args.transcript,
+            verbose=args.verbose,
+        ))
 
     main(target_path=args.path, nuclear=args.nuclear, setup=args.setup)
 

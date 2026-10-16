@@ -1,0 +1,11 @@
+id: 18-cli-subcommand
+category: feature
+difficulty: hard
+prompt: |
+  Add two things to the todo CLI:
+
+  1. A `done <id>` subcommand that marks a task as done and prints "Completed <id>: <title>".
+     An unknown id prints "No task <id>" to stderr and exits with status 1.
+  2. A `--pending` option for `list` that only shows tasks that aren't done.
+
+  `list` should show done tasks as "[x] <id> <title>" and open ones as "[ ] <id> <title>".

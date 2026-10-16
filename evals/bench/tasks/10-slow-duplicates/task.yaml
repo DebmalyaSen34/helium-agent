@@ -1,0 +1,6 @@
+id: 10-slow-duplicates
+category: performance
+difficulty: medium
+prompt: |
+  find_duplicates in the dedupe package is far too slow on our 200k-row exports.
+  Make it fast without changing what it returns.

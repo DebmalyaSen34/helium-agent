@@ -1,0 +1,17 @@
+id: 12-signup-validation
+category: feature
+difficulty: medium
+prompt: |
+  validate_signup in the signup package only checks that an email is present. Make it
+  return the full list of problems, in this order, using exactly these messages:
+
+  1. "email is required" when email is missing or blank; otherwise "invalid email" unless
+     it has exactly one "@", something before it, and a domain containing a "." that
+     doesn't start or end with ".".
+  2. "password too short" when the password has fewer than 8 characters (a missing
+     password counts as empty), and "password needs a digit" when it has no digit.
+     Both can apply.
+  3. "invalid age" when age is given but isn't an integer from 13 to 120. Age is optional;
+     booleans don't count as integers.
+
+  An empty list means the signup is valid.

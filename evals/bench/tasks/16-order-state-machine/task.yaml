@@ -1,0 +1,16 @@
+id: 16-order-state-machine
+category: feature
+difficulty: medium
+prompt: |
+  Implement transition() in orders/status.py. The allowed moves are:
+
+    new -> paid, new -> cancelled
+    paid -> shipped, paid -> refunded
+    shipped -> delivered
+    delivered -> returned
+
+  A valid move updates order.status and appends (old, new) to order.history.
+  Anything else, including moving to the same status or to an unknown status, raises
+  InvalidTransition from orders/errors.py with the message "cannot go from <old> to <new>"
+  and leaves the order unchanged. Also make can_transition() answer the same question
+  without changing anything.

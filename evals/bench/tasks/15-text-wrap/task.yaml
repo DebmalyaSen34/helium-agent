@@ -1,0 +1,10 @@
+id: 15-text-wrap
+category: feature
+difficulty: medium
+prompt: |
+  wrap() in the fmt package is a placeholder that chops text every `width` characters.
+  Make it wrap properly: break lines only at whitespace, collapse runs of whitespace
+  (including newlines) into single spaces, never return a line longer than `width`,
+  and split any single word longer than `width` into width-sized pieces. Empty or
+  whitespace-only text gives []. A width below 1 raises ValueError. The box() helper
+  should keep working.

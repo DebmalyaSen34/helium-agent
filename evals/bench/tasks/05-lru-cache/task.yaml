@@ -1,0 +1,6 @@
+id: 05-lru-cache
+category: feature
+difficulty: medium
+prompt: |
+  Implement the LRUCache class in cachekit according to its docstring. The other
+  modules already use it.

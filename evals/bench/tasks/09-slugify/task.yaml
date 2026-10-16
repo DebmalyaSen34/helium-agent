@@ -1,0 +1,8 @@
+id: 09-slugify
+category: bugfix
+difficulty: easy
+prompt: |
+  slugify in the blog package produces broken URLs: "Hello,  World!" becomes
+  "hello,--world!". It should lowercase the text, turn accented letters into plain
+  ones (é becomes e), replace every run of characters that aren't letters or digits
+  with a single "-", and strip leading and trailing dashes. Please fix it.

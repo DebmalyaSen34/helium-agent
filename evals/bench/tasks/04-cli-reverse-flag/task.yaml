@@ -1,0 +1,7 @@
+id: 04-cli-reverse-flag
+category: feature
+difficulty: easy
+prompt: |
+  Add a --reverse flag to the wordcount command-line tool that lists the least
+  common words first. Words with the same count must stay in alphabetical order
+  in both modes, and --top should still limit the output.

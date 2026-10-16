@@ -306,15 +306,19 @@ _CORE_TOOLS = (
 )
 _SUBAGENT_TOOLS = ("create_subagent", "delegate_task", "delete_subagent", "list_subagents")
 TOOLSETS: dict[str, tuple[str, ...]] = {
-    "chat": (*_CORE_TOOLS, "search_web", "research_query", "browse_url",
-             "remember_fact", "retrieve_facts", "forget_fact", "open_app", "get_time"),
-    "code": (*_CORE_TOOLS, "move_file", "run_tests", "search_web", "browse_url", *_SUBAGENT_TOOLS),
+    "main": (*_CORE_TOOLS, "move_file", "run_tests", "search_web", "research_query", "browse_url",
+             "remember_fact", "retrieve_facts", "forget_fact", "open_app", "get_time", *_SUBAGENT_TOOLS),
     "subagent": (*_CORE_TOOLS, "move_file", "run_tests", "search_web", "browse_url"),
 }
 
+# File-writing tools that "accept edits" mode approves without asking.
+EDIT_TOOLS = frozenset(
+    {"edit_file", "write_file", "append_file", "replace_text", "patch_file", "mkdir", "touch_file", "create_file"}
+)
+
 
 def tools_for(mode: str) -> list[str]:
-    """The tools offered to the model in `mode` ("chat", "code" or "subagent")."""
+    """The tools offered to the model in `mode` ("main" or "subagent")."""
     return list(TOOLSETS[mode])
 
 

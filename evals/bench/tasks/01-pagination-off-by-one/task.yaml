@@ -1,0 +1,6 @@
+id: 01-pagination-off-by-one
+category: bugfix
+difficulty: easy
+prompt: |
+  Users say page 1 of the product catalog skips the first few products, and the
+  last partially filled page never shows up in the page list. Please fix the pagination.

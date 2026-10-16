@@ -1,0 +1,6 @@
+id: 08-config-not-applied
+category: bugfix
+difficulty: medium
+prompt: |
+  Setting APP_TIMEOUT_SECONDS=60 has no effect: the HTTP client still gives up after
+  5 seconds. Figure out why and fix it.

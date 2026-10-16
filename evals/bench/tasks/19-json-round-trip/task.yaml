@@ -1,0 +1,7 @@
+id: 19-json-round-trip
+category: bugfix
+difficulty: hard
+prompt: |
+  Round-tripping an Event through to_json and from_json in the events package doesn't
+  give back an equal Event. Fix the serialization so from_json(to_json(e)) == e for
+  every Event, and to_json still produces valid JSON.

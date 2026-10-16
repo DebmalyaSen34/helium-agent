@@ -1,0 +1,6 @@
+id: 06-rename-function
+category: refactor
+difficulty: medium
+prompt: |
+  Rename calc_total to compute_total everywhere in this project, including the
+  tests and docstrings. Don't leave the old name behind as an alias.

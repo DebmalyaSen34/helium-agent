@@ -1,0 +1,8 @@
+id: 03-duration-parser
+category: feature
+difficulty: medium
+prompt: |
+  Extend parse_duration in the timeparse package so it understands combined units
+  like "1h30m", "2d", "45m10s" and a bare number such as "90" (seconds). Supported
+  units are d, h, m and s, each used at most once and in that order. Return the total
+  in seconds. Anything else, such as "", "5x", "h" or "10m5h", must raise ValueError.

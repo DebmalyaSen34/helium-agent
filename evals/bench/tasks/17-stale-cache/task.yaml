@@ -1,0 +1,8 @@
+id: 17-stale-cache
+category: bugfix
+difficulty: hard
+prompt: |
+  After ProductService.update_price, reading the product back still shows the old
+  price, and so does the product listing. Fix it so reads after a write always see
+  the new data, but keep the caching: repeated reads with no writes in between must
+  not hit the repository again.

@@ -18,8 +18,7 @@ stop_sequences = []
 [llm.extra_params]
 
 [agent]
-chat_max_turns = 12
-code_max_turns = 40
+max_turns = 40              # tool turns per request before Helium stops and reports
 parallel_safe_tools = true
 
 [browser]
